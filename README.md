@@ -3,10 +3,19 @@
 A fully-featured space shooter game built with React Native and React Native Game Engine. Defend Earth from waves of alien invaders in this classic arcade-style game!
 
 ![SpaceDefender Logo](https://img.shields.io/badge/SpaceDefender-React%20Native-blue?style=for-the-badge&logo=react)
+![Version](https://img.shields.io/badge/version-0.0.1-green?style=for-the-badge)
+![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-lightgrey?style=for-the-badge)
+![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
 ## 📱 Screenshots
 
-*(Add screenshots here when available)*
+### Game Screens
+
+| Main Menu | Gameplay | Level Progress | Game Over |
+|-----------|----------|----------------|-----------|
+| ![Main Menu](./src/assets/screenshots/1.jpeg) | ![Gameplay](./src/assets/screenshots/2.jpeg) | ![Level Progress](./src/assets/screenshots/3.jpeg) | ![Game Over](./src/assets/screenshots/4.jpeg) |
+
+*Experience the thrilling space shooter gameplay across different game states!*
 
 ## 🎮 Game Features
 
@@ -63,19 +72,31 @@ A fully-featured space shooter game built with React Native and React Native Gam
 ## 🚀 Installation & Setup
 
 ### Prerequisites
-- Node.js 16+ 
-- React Native development environment
-- Android Studio / Xcode for device testing
+- **Node.js 22.11.0+** (as specified in package.json engines)
+- **React Native development environment**
+- **Android Studio** - For Android development and testing
+- **Xcode** - For iOS development (macOS only)
+- **Physical device or emulator** - For testing
 
 ### Clone & Install
 ```bash
+# Clone the repository
 git clone https://github.com/prateek8318/SpaceDefender.git
 cd SpaceDefender
+
+# Install dependencies
 npm install
+
+# For iOS users, install CocoaPods dependencies
+cd ios && pod install && cd ..
 ```
 
-### iOS Setup
+### iOS Setup (macOS only)
 ```bash
+# Install CocoaPods if not already installed
+sudo gem install cocoapods
+
+# Install iOS dependencies
 cd ios && pod install && cd ..
 ```
 
@@ -83,14 +104,32 @@ cd ios && pod install && cd ..
 
 #### Development Mode
 ```bash
-# Start Metro bundler
+# Start Metro bundler (in one terminal)
 npm start
 
 # In another terminal, run on Android
 npm run android
 
-# Or run on iOS
+# Or run on iOS (macOS only)
 npm run ios
+```
+
+#### Quick Start Commands
+```bash
+# For Android development
+npm run android
+
+# For iOS development (macOS only)
+npm run ios
+
+# Start Metro bundler only
+npm start
+
+# Run tests
+npm test
+
+# Lint code
+npm run lint
 ```
 
 #### Production Build
@@ -127,34 +166,31 @@ cd ios && xcodebuild -workspace SpaceDefender.xcworkspace -scheme SpaceDefender 
 ## 📁 Project Structure
 
 ```
-src/
-├── components/          # React components for game entities
-│   ├── Player.tsx      # Player spaceship component
-│   ├── Enemy.tsx       # Enemy components
-│   ├── Bullet.tsx      # Bullet components
-│   ├── Particle.tsx    # Particle effects
-│   └── HUD.tsx        # Heads-up display
-├── systems/            # Game engine systems
-│   ├── PlayerSystem.ts  # Player movement logic
-│   ├── BulletSystem.ts  # Bullet spawning and physics
-│   ├── EnemySystem.ts   # Enemy spawning and AI
-│   ├── CollisionSystem.ts # Collision detection
-│   └── ParticleSystem.ts # Particle management
-├── hooks/              # Custom React hooks
-│   ├── useGameState.ts # Game state management
-│   └── useSounds.ts   # Audio system
-├── screens/            # Navigation screens
-│   ├── HomeScreen.tsx  # Main menu
-│   ├── GameScreen.tsx  # Main game screen
-│   ├── LevelSelectScreen.tsx # Level selection
-│   └── LeaderboardScreen.tsx # High scores
-├── utils/              # Utility functions
-│   ├── colors.ts       # Game color scheme
-│   ├── responsive.ts   # Screen dimensions
-│   ├── physics.ts      # Collision helpers
-│   └── levelConfig.ts # Level configurations
-└── types/              # TypeScript definitions
-    └── game.types.ts   # Game entity types
+SpaceDefender/
+├── src/
+│   ├── components/          # React components for game entities
+│   │   ├── Player.tsx      # Player spaceship component
+│   │   ├── Enemy.tsx       # Enemy components
+│   │   ├── Bullet.tsx      # Bullet components
+│   │   ├── Particle.tsx    # Particle effects
+│   │   ├── BackgroundStars.tsx # Animated background
+│   │   └── HUD.tsx        # Heads-up display
+│   ├── hooks/              # Custom React hooks
+│   │   ├── useGameState.ts # Game state management
+│   │   ├── useHighScore.ts # High score tracking
+│   │   └── useSounds.ts   # Audio system
+│   ├── navigation/         # Navigation setup
+│   │   └── RootNavigator.tsx # Main navigation container
+│   ├── assets/             # Game assets
+│   │   ├── sounds/        # Sound effects
+│   │   └── splash.png     # App splash screen
+│   └── App.tsx            # Main app component
+├── android/               # Android-specific code
+├── ios/                   # iOS-specific code
+├── __tests__/            # Test files
+├── package.json          # Dependencies and scripts
+├── tsconfig.json         # TypeScript configuration
+└── README.md            # This file
 ```
 
 ## 🎨 Customization
@@ -193,6 +229,15 @@ npm run lint       # Run ESLint
 npm test           # Run Jest tests
 ```
 
+### Key Dependencies
+- **React Native 0.84.1** - Core framework
+- **React Native Game Engine** - Game engine with entity-component-system
+- **Matter.js** - Physics engine
+- **React Navigation** - Navigation between screens
+- **React Native Gesture Handler** - Touch gesture handling
+- **React Native Sound** - Audio playback
+- **TypeScript** - Type safety
+
 ### Debugging
 - **React Native Debugger** - Connect to debug Redux state and network
 - **Flipper** - Advanced debugging with React Native
@@ -214,11 +259,27 @@ npm test           # Run Jest tests
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+We welcome contributions! Here's how you can help:
+
+1. **Fork the repository**
+2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
+3. **Commit your changes** (`git commit -m 'Add amazing feature'`)
+4. **Push to the branch** (`git push origin feature/amazing-feature`)
+5. **Open a Pull Request**
+
+### Contribution Guidelines
+- Follow the existing code style and TypeScript patterns
+- Add tests for new features
+- Update documentation as needed
+- Ensure the game builds and runs successfully before submitting
+
+### Areas for Contribution
+- **New enemy types** with unique behaviors
+- **Power-ups and bonuses** 
+- **Additional sound effects and music**
+- **UI/UX improvements**
+- **Performance optimizations**
+- **Bug fixes and stability improvements**
 
 ## 📄 License
 
@@ -231,8 +292,35 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **React Navigation** - For seamless navigation
 - **Matter.js** - For physics calculations (included in dependencies)
 
+## 📊 Game Stats
+
+- **Total Levels**: 10 progressive levels
+- **Enemy Types**: 4 unique enemy types + bosses
+- **Weapon Upgrades**: 3-tier weapon system
+- **Platform Support**: Android & iOS
+- **Code Coverage**: TypeScript throughout
+
+## 🎯 Future Roadmap
+
+- [ ] **Multiplayer Mode** - Battle friends online
+- [ ] **Daily Challenges** - Special missions with rewards
+- [ ] **Achievement System** - Unlock badges and rewards
+- [ ] **Custom Skins** - Personalize your spaceship
+- [ ] **Leaderboard Integration** - Global high scores
+- [ ] **Soundtrack** - Original background music
+- [ ] **More Power-ups** - Shield, speed boost, multi-shot
+
+## 📞 Support
+
+If you encounter any issues or have suggestions:
+- **Report bugs** via GitHub Issues
+- **Feature requests** are welcome
+- **Join our community** for discussions and tips
+
 ---
 
 **Made with ❤️ using React Native**
 
 *Game on! 🎮*
+
+**⭐ If you like this game, please star the repository!**

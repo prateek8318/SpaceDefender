@@ -23,7 +23,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       statusBarTranslucent
     >
       <View style={styles.overlay}>
@@ -43,11 +43,19 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           </View>
           
           <View style={styles.buttonContainer}>
-            <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+            <TouchableOpacity 
+              style={styles.retryButton} 
+              onPress={onRetry}
+              activeOpacity={0.7}
+            >
               <Text style={styles.retryButtonText}>RETRY</Text>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.homeButton} onPress={onHome}>
+            <TouchableOpacity 
+              style={styles.homeButton} 
+              onPress={onHome}
+              activeOpacity={0.7}
+            >
               <Text style={styles.homeButtonText}>HOME</Text>
             </TouchableOpacity>
           </View>

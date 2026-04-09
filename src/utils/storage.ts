@@ -1,5 +1,39 @@
 // === FILE: src/utils/storage.ts ===
 
+import RNFS from 'react-native-fs';
+
+const STORAGE_DIR = RNFS.DocumentDirectoryPath;
+const STORAGE_FILE = `${STORAGE_DIR}/game_data.json`;
+
+interface StorageData {
+  [key: string]: string;
+}
+
+let memoryStorage: StorageData = {};
+
+const loadStorage = async (): Promise<void> => {
+  try {
+    const exists = await RNFS.exists(STORAGE_FILE);
+    if (exists) {
+      const data = await RNFS.readFile(STORAGE_FILE, 'utf8');
+      memoryStorage = JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error loading storage:', error);
+  }
+};
+
+const saveStorage = async (): Promise<void> => {
+  try {
+    await RNFS.writeFile(STORAGE_FILE, JSON.stringify(memoryStorage), 'utf8');
+  } catch (error) {
+    console.error('Error saving storage:', error);
+  }
+};
+
+// Load storage on module load
+loadStorage();
+
 export interface ScoreEntry {
   score: number;
   level: number;
@@ -10,58 +44,30 @@ const LEADERBOARD_KEY = '@space_defender_leaderboard';
 const UNLOCKED_LEVEL_KEY = '@space_defender_unlocked_level';
 const BEST_SCORE_KEY = '@space_defender_best_score';
 
-// Fallback to memory storage due to AsyncStorage native module issues
-// In production, this should be replaced with proper AsyncStorage setup
-let memoryStorage: { [key: string]: string } = {};
-
 const getItem = async (key: string): Promise<string | null> => {
   try {
-    // Try AsyncStorage first
-    try {
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      return await AsyncStorage.getItem(key);
-    } catch (asyncError) {
-      // Fallback to memory storage
-      console.log('AsyncStorage not available, using memory storage');
-      return memoryStorage[key] || null;
-    }
+    return memoryStorage[key] || null;
   } catch (error) {
     console.error('Error getting item:', error);
-    return memoryStorage[key] || null;
+    return null;
   }
 };
 
 const setItem = async (key: string, value: string): Promise<void> => {
   try {
-    // Try AsyncStorage first
-    try {
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      await AsyncStorage.setItem(key, value);
-    } catch (asyncError) {
-      // Fallback to memory storage
-      console.log('AsyncStorage not available, using memory storage');
-      memoryStorage[key] = value;
-    }
+    memoryStorage[key] = value;
+    await saveStorage(); // Save to file immediately
   } catch (error) {
     console.error('Error setting item:', error);
-    memoryStorage[key] = value;
   }
 };
 
 const removeItem = async (key: string): Promise<void> => {
   try {
-    // Try AsyncStorage first
-    try {
-      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-      await AsyncStorage.removeItem(key);
-    } catch (asyncError) {
-      // Fallback to memory storage
-      console.log('AsyncStorage not available, using memory storage');
-      delete memoryStorage[key];
-    }
+    delete memoryStorage[key];
+    await saveStorage();
   } catch (error) {
     console.error('Error removing item:', error);
-    delete memoryStorage[key];
   }
 };
 

@@ -2,7 +2,6 @@
 import { EnemyEntity, Entity, SystemArgs } from '../types/game.types';
 import { getLevelConfig } from '../utils/levelConfig';
 import { randomRange } from '../utils/physics';
-import { COLORS } from '../utils/colors';
 import { Enemy } from '../components/Enemy';
 
 export const EnemySystem = (entities: Entity[], { screen, dispatch }: SystemArgs, gameState: any) => {
@@ -35,7 +34,7 @@ export const EnemySystem = (entities: Entity[], { screen, dispatch }: SystemArgs
 };
 
 const getEnemyWeights = (level: number) => {
-  const weights = [
+  const weights: { type: 'basic' | 'fast' | 'tank' | 'boss'; weight: number }[] = [
     { type: 'basic' as const, weight: 0.6 },
     { type: 'fast' as const, weight: 0.3 },
     { type: 'tank' as const, weight: 0.1 },
@@ -43,7 +42,9 @@ const getEnemyWeights = (level: number) => {
 
   if (level >= 5 && level % 5 === 0) {
     weights.push({ type: 'boss' as const, weight: 0.05 });
-    weights.forEach(w => w.weight *= 0.95);
+    weights.forEach(w => {
+      w.weight *= 0.95;
+    });
   }
 
   return weights;

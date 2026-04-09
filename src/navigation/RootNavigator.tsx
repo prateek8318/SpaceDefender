@@ -20,10 +20,9 @@ export const RootNavigator: React.FC = () => {
           cardStyle: { backgroundColor: COLORS.bg },
           cardOverlayEnabled: true,
           gestureEnabled: true,
-          animationEnabled: true,
           transitionSpec: {
-            open: { animation: 'timing', config: { duration: 300 } },
-            close: { animation: 'timing', config: { duration: 250 } },
+            open: { animation: 'timing', config: { duration: 150 } },
+            close: { animation: 'timing', config: { duration: 100 } },
           },
           cardStyleInterpolator: ({ current, layouts }) => {
             return {
@@ -32,7 +31,7 @@ export const RootNavigator: React.FC = () => {
                   {
                     translateX: current.progress.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [layouts.screen.width, 0],
+                      outputRange: [layouts.screen.width * 0.5, 0],
                     }),
                   },
                 ],
@@ -40,7 +39,7 @@ export const RootNavigator: React.FC = () => {
               overlayStyle: {
                 opacity: current.progress.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 0.5],
+                  outputRange: [0, 0.3],
                 }),
               },
             };

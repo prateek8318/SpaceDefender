@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import React, { memo, useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { COLORS } from '../utils/colors';
 
 interface Star {
@@ -10,55 +10,21 @@ interface Star {
   opacity: number;
 }
 
-export const BackgroundStars: React.FC = () => {
-  const [stars, setStars] = useState<Star[]>([]);
-  const animationRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    // Generate fewer stars for better performance
-    const initialStars: Star[] = [];
-    for (let i = 0; i < 20; i++) { // Reduced from 50 to 20
-      initialStars.push({
-        id: i,
+export const BackgroundStars: React.FC = memo(() => {
+  const stars = useMemo<Star[]>(
+    () =>
+      Array.from({ length: 24 }, (_, index) => ({
+        id: index,
         x: Math.random() * 100,
         y: Math.random() * 100,
-        size: Math.random() * 1.5 + 0.5, // Smaller stars
-        opacity: Math.random() * 0.6 + 0.2, // Lower opacity
-      });
-    }
-    setStars(initialStars);
-  }, []);
-
-  useEffect(() => {
-    let lastUpdate = Date.now();
-    const animateStars = () => {
-      const now = Date.now();
-      const deltaTime = now - lastUpdate;
-      
-      if (deltaTime > 100) { // Update every 100ms instead of continuous
-        setStars(prevStars => 
-          prevStars.map(star => ({
-            ...star,
-            y: star.y >= 100 ? -5 : star.y + 0.5, // Simple downward movement
-          }))
-        );
-        lastUpdate = now;
-      }
-      
-      animationRef.current = requestAnimationFrame(animateStars);
-    };
-
-    animationRef.current = requestAnimationFrame(animateStars);
-
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, []);
+        size: Math.random() * 2 + 1,
+        opacity: Math.random() * 0.45 + 0.25,
+      })),
+    [],
+  );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} pointerEvents="none">
       {stars.map(star => (
         <View
           key={star.id}
@@ -74,21 +40,37 @@ export const BackgroundStars: React.FC = () => {
           ]}
         />
       ))}
+      <View style={styles.nebulaTop} />
+      <View style={styles.nebulaBottom} />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
   },
   star: {
     position: 'absolute',
     backgroundColor: COLORS.white,
-    borderRadius: 1,
+    borderRadius: 999,
+  },
+  nebulaTop: {
+    position: 'absolute',
+    top: '-8%',
+    left: '-15%',
+    width: '70%',
+    height: '28%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(0, 180, 255, 0.08)',
+  },
+  nebulaBottom: {
+    position: 'absolute',
+    bottom: '-10%',
+    right: '-12%',
+    width: '65%',
+    height: '24%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 80, 80, 0.08)',
   },
 });

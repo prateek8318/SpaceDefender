@@ -1,6 +1,6 @@
 // === FILE: src/hooks/useGameState.ts ===
-import { useState, useCallback, useRef } from 'react';
-import { GameState, GameStatus } from '../types/game.types';
+import { useCallback, useRef, useState } from 'react';
+import { GameState } from '../types/game.types';
 import { getLevelConfig } from '../utils/levelConfig';
 
 export const useGameState = (initialLevel: number = 1) => {
@@ -20,17 +20,12 @@ export const useGameState = (initialLevel: number = 1) => {
   const startTime = useRef<number>(0);
 
   const updateScore = useCallback((points: number) => {
-    setGameState(prev => {
-      const newScore = prev.score + points;
-      console.log(`Score updated: ${prev.score} + ${points} = ${newScore}`);
-      return { ...prev, score: newScore };
-    });
+    setGameState(prev => ({ ...prev, score: prev.score + points }));
   }, []);
 
   const loseLife = useCallback(() => {
     setGameState(prev => {
       const newLives = Math.max(0, prev.lives - 1);
-      console.log(`Life lost! Lives: ${prev.lives} -> ${newLives}, Status: ${newLives === 0 ? 'over' : prev.status}`);
       return {
         ...prev,
         lives: newLives,
@@ -43,16 +38,10 @@ export const useGameState = (initialLevel: number = 1) => {
     setGameState(prev => {
       const newKills = prev.kills + 1;
       const levelConfig = getLevelConfig(prev.level);
-      
-      console.log(`Kill added: ${newKills}/${levelConfig.killsToAdvance} for level ${prev.level}`);
-      
+
       if (newKills >= levelConfig.killsToAdvance) {
-        const newLevel = Math.min(prev.level + 1, 10);
-        console.log(`Level advancing from ${prev.level} to ${newLevel}`);
-        
-        // Save unlocked level immediately when level advances
+        const newLevel = Math.min(prev.level + 1, 500);
         if (newLevel > prev.level) {
-          console.log(`Saving unlocked level: ${newLevel}`);
           import('../utils/storage').then(({ saveUnlockedLevel }) => {
             saveUnlockedLevel(newLevel);
           });

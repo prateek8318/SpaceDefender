@@ -4,7 +4,7 @@ import { circleCollision, randomRange } from '../utils/physics';
 import { COLORS } from '../utils/colors';
 import { Particle } from '../components/Particle';
 
-export const CollisionSystem = (entities: Entity[], { dispatch }: SystemArgs, gameState: any) => {
+export const CollisionSystem = (entities: Entity[], { dispatch }: SystemArgs, _gameState: any) => {
   const bullets = entities.filter(e => e.id.startsWith('bullet')) as BulletEntity[];
   const enemies = entities.filter(e => e.id.startsWith('enemy')) as EnemyEntity[];
   const player = entities.find(e => e.id === 'player');

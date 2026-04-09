@@ -1,33 +1,35 @@
 // === FILE: src/components/Bullet.tsx ===
-import React from 'react';
+import React, { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { BulletEntity } from '../types/game.types';
 import { COLORS } from '../utils/colors';
 
-export const Bullet: React.FC<BulletEntity> = (entity) => {
+export const Bullet: React.FC<BulletEntity> = memo((entity) => {
+  const hostile = (entity as BulletEntity & { hostile?: boolean }).hostile;
+
   return (
     <View style={[styles.container, { left: entity.x, top: entity.y }]}>
       {/* Energy aura effect */}
-      <View style={styles.energyAura} />
-      <View style={styles.energyCore} />
+      <View style={[styles.energyAura, hostile && styles.enemyAura]} />
+      <View style={[styles.energyCore, hostile && styles.enemyCore]} />
       
       {/* Plasma glow layers */}
-      <View style={styles.plasmaGlow} />
-      <View style={styles.plasmaInner} />
+      <View style={[styles.plasmaGlow, hostile && styles.enemyGlow]} />
+      <View style={[styles.plasmaInner, hostile && styles.enemyInner]} />
       
       {/* Main energy bolt */}
-      <View style={styles.energyBolt} />
-      <View style={styles.energyCore} />
+      <View style={[styles.energyBolt, hostile && styles.enemyBolt]} />
+      <View style={[styles.energyCore, hostile && styles.enemyCore]} />
       
       {/* Power trail */}
-      <View style={styles.powerTrail} />
-      <View style={styles.trailParticles} />
+      <View style={[styles.powerTrail, hostile && styles.enemyTrail]} />
+      <View style={[styles.trailParticles, hostile && styles.enemyTrailParticles]} />
       
       {/* Impact glow */}
-      <View style={styles.impactGlow} />
+      <View style={[styles.impactGlow, hostile && styles.enemyImpactGlow]} />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -54,6 +56,12 @@ const styles = StyleSheet.create({
     left: -3.5,
     top: -2.5,
   },
+  enemyAura: {
+    backgroundColor: COLORS.glowRed,
+  },
+  enemyCore: {
+    backgroundColor: COLORS.accentBright,
+  },
   // Plasma glow layers
   plasmaGlow: {
     position: 'absolute',
@@ -75,6 +83,12 @@ const styles = StyleSheet.create({
     left: -1.5,
     top: -0.5,
   },
+  enemyGlow: {
+    backgroundColor: COLORS.glowPurple,
+  },
+  enemyInner: {
+    backgroundColor: COLORS.accent,
+  },
   // Main energy bolt
   energyBolt: {
     position: 'absolute',
@@ -82,6 +96,9 @@ const styles = StyleSheet.create({
     height: 18,
     backgroundColor: COLORS.primary,
     borderRadius: 3,
+  },
+  enemyBolt: {
+    backgroundColor: COLORS.danger,
   },
   // Power trail effects
   powerTrail: {
@@ -104,6 +121,14 @@ const styles = StyleSheet.create({
     top: -8,
     opacity: 0.9,
   },
+  enemyTrail: {
+    backgroundColor: COLORS.glowRed,
+    top: 18,
+  },
+  enemyTrailParticles: {
+    backgroundColor: COLORS.accentBright,
+    top: 20,
+  },
   // Impact glow
   impactGlow: {
     position: 'absolute',
@@ -114,5 +139,8 @@ const styles = StyleSheet.create({
     left: -1,
     top: 5,
     opacity: 0.7,
+  },
+  enemyImpactGlow: {
+    backgroundColor: COLORS.accent,
   },
 });

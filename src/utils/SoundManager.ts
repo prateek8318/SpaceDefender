@@ -1,11 +1,60 @@
-import Sound from 'react-native-sound';
+import { Platform } from 'react-native';
 
-// Enable sound playback
-Sound.setCategory('Playback');
+interface DummySound {
+  play: (callback?: (success: boolean) => void) => void;
+  stop: (callback?: () => void) => void;
+  setVolume: (volume: number) => void;
+  setNumberOfLoops: (loops: number) => void;
+  release: () => void;
+}
+
+interface SoundLibrary {
+  MAIN_BUNDLE: string;
+  setCategory: (category: string) => void;
+  new (filename: string, bundle: string, callback?: (error: unknown) => void): DummySound;
+}
+
+type SoundKey = 'spaceTheme' | 'shoot' | 'explosion' | 'gameOver' | 'powerUp' | 'levelUp';
+
+const noopSound: DummySound = {
+  play: callback => callback?.(false),
+  stop: callback => callback?.(),
+  setVolume: () => {},
+  setNumberOfLoops: () => {},
+  release: () => {},
+};
+
+let Sound: SoundLibrary | null = null;
+try {
+  Sound = require('react-native-sound').default;
+  if (Sound) {
+    Sound.setCategory('Playback');
+  }
+} catch {
+  Sound = null;
+}
+
+const SOUND_CANDIDATES: Record<SoundKey, string[]> = {
+  spaceTheme: Platform.OS === 'android' ? ['space_theme'] : ['space theme.mp3', 'space_theme.mp3'],
+  shoot: Platform.OS === 'android' ? ['shoot'] : ['Shooting sound effects.mp3', 'shoot.mp3'],
+  explosion: Platform.OS === 'android' ? ['explosion'] : ['Explosion sounds.mp3', 'explosion.mp3'],
+  gameOver: Platform.OS === 'android' ? ['game_over'] : ['Game over.mp3', 'game_over.mp3'],
+  powerUp: Platform.OS === 'android' ? ['power_up'] : ['Power-up sounds.mp3', 'power_up.mp3'],
+  levelUp: Platform.OS === 'android' ? ['levelup', 'levelup.mp3'] : ['levelup.mp3'],
+};
+
+const SOUND_VOLUME: Record<SoundKey, number> = {
+  spaceTheme: 0.3,
+  shoot: 0.45,
+  explosion: 0.75,
+  gameOver: 0.8,
+  powerUp: 0.65,
+  levelUp: 0.8,
+};
 
 class SoundManager {
-  private sounds: { [key: string]: Sound } = {};
-  private backgroundMusic: Sound | null = null;
+  private sounds: Partial<Record<SoundKey, DummySound>> = {};
+  private backgroundMusic: DummySound | null = null;
   private isInitialized = false;
 
   constructor() {
@@ -13,281 +62,98 @@ class SoundManager {
   }
 
   private initializeSounds() {
-    try {
-      // Background music
-      this.sounds.spaceTheme = new Sound(
-        'space_theme.mp3', // Using underscore for better compatibility
-        Sound.MAIN_BUNDLE,
-        (error) => {
-          if (error) {
-            console.log('Failed to load space theme', error);
-            // Try alternative filename
-            this.sounds.spaceTheme = new Sound(
-              'space theme.mp3',
-              Sound.MAIN_BUNDLE,
-              (altError) => {
-                if (altError) {
-                  console.log('Failed to load space theme with both filenames', altError);
-                } else {
-                  console.log('Space theme loaded successfully (alt filename)');
-                }
-              }
-            );
-          } else {
-            console.log('Space theme loaded successfully');
-          }
-        }
-      );
-
-      // Sound effects
-      this.sounds.shoot = new Sound(
-        'shooting_sound_effects.mp3',
-        Sound.MAIN_BUNDLE,
-        (error) => {
-          if (error) {
-            console.log('Failed to load shoot sound', error);
-            // Try alternative
-            this.sounds.shoot = new Sound(
-              'Shooting sound effects.mp3',
-              Sound.MAIN_BUNDLE,
-              (altError) => {
-                if (altError) {
-                  console.log('Failed to load shoot sound with both filenames', altError);
-                } else {
-                  console.log('Shoot sound loaded successfully (alt filename)');
-                  this.sounds.shoot?.setVolume(0.5);
-                }
-              }
-            );
-          } else {
-            console.log('Shoot sound loaded successfully');
-            this.sounds.shoot?.setVolume(0.5);
-          }
-        }
-      );
-
-      this.sounds.explosion = new Sound(
-        'explosion_sounds.mp3',
-        Sound.MAIN_BUNDLE,
-        (error) => {
-          if (error) {
-            console.log('Failed to load explosion sound', error);
-            // Try alternative
-            this.sounds.explosion = new Sound(
-              'Explosion sounds.mp3',
-              Sound.MAIN_BUNDLE,
-              (altError) => {
-                if (altError) {
-                  console.log('Failed to load explosion sound with both filenames', altError);
-                } else {
-                  console.log('Explosion sound loaded successfully (alt filename)');
-                  this.sounds.explosion?.setVolume(0.7);
-                }
-              }
-            );
-          } else {
-            console.log('Explosion sound loaded successfully');
-            this.sounds.explosion?.setVolume(0.7);
-          }
-        }
-      );
-
-      this.sounds.gameOver = new Sound(
-        'game_over.mp3',
-        Sound.MAIN_BUNDLE,
-        (error) => {
-          if (error) {
-            console.log('Failed to load game over sound', error);
-            // Try alternative
-            this.sounds.gameOver = new Sound(
-              'Game over.mp3',
-              Sound.MAIN_BUNDLE,
-              (altError) => {
-                if (altError) {
-                  console.log('Failed to load game over sound with both filenames', altError);
-                } else {
-                  console.log('Game over sound loaded successfully (alt filename)');
-                  this.sounds.gameOver?.setVolume(0.8);
-                }
-              }
-            );
-          } else {
-            console.log('Game over sound loaded successfully');
-            this.sounds.gameOver?.setVolume(0.8);
-          }
-        }
-      );
-
-      this.sounds.powerUp = new Sound(
-        'power_up_sounds.mp3',
-        Sound.MAIN_BUNDLE,
-        (error) => {
-          if (error) {
-            console.log('Failed to load power-up sound', error);
-            // Try alternative
-            this.sounds.powerUp = new Sound(
-              'Power-up sounds.mp3',
-              Sound.MAIN_BUNDLE,
-              (altError) => {
-                if (altError) {
-                  console.log('Failed to load power-up sound with both filenames', altError);
-                } else {
-                  console.log('Power-up sound loaded successfully (alt filename)');
-                  this.sounds.powerUp?.setVolume(0.6);
-                }
-              }
-            );
-          } else {
-            console.log('Power-up sound loaded successfully');
-            this.sounds.powerUp?.setVolume(0.6);
-          }
-        }
-      );
-
-      this.sounds.levelUp = new Sound(
-        'levelup.mp3',
-        Sound.MAIN_BUNDLE,
-        (error) => {
-          if (error) {
-            console.log('Failed to load level up sound', error);
-          } else {
-            console.log('Level up sound loaded successfully');
-            this.sounds.levelUp?.setVolume(0.8);
-          }
-        }
-      );
-
+    if (!Sound) {
       this.isInitialized = true;
-    } catch (error) {
-      console.error('Error initializing sounds:', error);
+      return;
     }
+
+    (Object.keys(SOUND_CANDIDATES) as SoundKey[]).forEach(key => {
+      this.loadSound(key, SOUND_CANDIDATES[key]);
+    });
+
+    this.isInitialized = true;
   }
 
-  playBackgroundMusic(loop: boolean = true) {
-    if (!this.isInitialized || !this.sounds.spaceTheme) return;
-
-    try {
-      if (this.backgroundMusic) {
-        this.backgroundMusic.stop();
-        this.backgroundMusic.release();
-      }
-
-      this.backgroundMusic = this.sounds.spaceTheme;
-      this.backgroundMusic.setVolume(0.3);
-      
-      if (loop) {
-        this.backgroundMusic.setNumberOfLoops(-1);
-      }
-      
-      this.backgroundMusic.play((success) => {
-        if (!success) {
-          console.log('Background music playback failed');
-        }
-      });
-    } catch (error) {
-      console.error('Error playing background music:', error);
+  private loadSound(key: SoundKey, candidates: string[], index = 0) {
+    if (!Sound || index >= candidates.length) {
+      this.sounds[key] = noopSound;
+      return;
     }
+
+    const filename = candidates[index];
+    this.sounds[key] = new Sound(filename, Sound.MAIN_BUNDLE, error => {
+      if (error) {
+        this.loadSound(key, candidates, index + 1);
+        return;
+      }
+
+      this.sounds[key]?.setVolume(SOUND_VOLUME[key]);
+    });
+  }
+
+  private playEffect(key: SoundKey) {
+    if (!this.isInitialized) return;
+
+    const sound = this.sounds[key];
+    if (!sound) return;
+
+    sound.stop(() => {
+      sound.play(() => {});
+    });
+  }
+
+  playBackgroundMusic(loop = true) {
+    if (!this.isInitialized) return;
+
+    const sound = this.sounds.spaceTheme;
+    if (!sound) return;
+
+    if (this.backgroundMusic && this.backgroundMusic !== sound) {
+      this.backgroundMusic.stop();
+      this.backgroundMusic.release();
+    }
+
+    this.backgroundMusic = sound;
+    this.backgroundMusic.setVolume(SOUND_VOLUME.spaceTheme);
+    this.backgroundMusic.setNumberOfLoops(loop ? -1 : 0);
+    this.backgroundMusic.stop(() => {
+      this.backgroundMusic?.play(() => {});
+    });
   }
 
   stopBackgroundMusic() {
-    if (this.backgroundMusic) {
-      this.backgroundMusic.stop();
-    }
+    this.backgroundMusic?.stop();
   }
 
   playShootSound() {
-    if (!this.isInitialized || !this.sounds.shoot) return;
-    
-    try {
-      this.sounds.shoot.stop(() => {
-        this.sounds.shoot.play((success) => {
-          if (!success) {
-            console.log('Shoot sound playback failed');
-          }
-        });
-      });
-    } catch (error) {
-      console.error('Error playing shoot sound:', error);
-    }
+    this.playEffect('shoot');
   }
 
   playExplosionSound() {
-    if (!this.isInitialized || !this.sounds.explosion) return;
-    
-    try {
-      this.sounds.explosion.stop(() => {
-        this.sounds.explosion.play((success) => {
-          if (!success) {
-            console.log('Explosion sound playback failed');
-          }
-        });
-      });
-    } catch (error) {
-      console.error('Error playing explosion sound:', error);
-    }
+    this.playEffect('explosion');
   }
 
   playGameOverSound() {
-    if (!this.isInitialized || !this.sounds.gameOver) return;
-    
-    try {
-      this.sounds.gameOver.stop(() => {
-        this.sounds.gameOver.play((success) => {
-          if (!success) {
-            console.log('Game over sound playback failed');
-          }
-        });
-      });
-    } catch (error) {
-      console.error('Error playing game over sound:', error);
-    }
+    this.playEffect('gameOver');
   }
 
   playPowerUpSound() {
-    if (!this.isInitialized || !this.sounds.powerUp) return;
-    
-    try {
-      this.sounds.powerUp.stop(() => {
-        this.sounds.powerUp.play((success) => {
-          if (!success) {
-            console.log('Power-up sound playback failed');
-          }
-        });
-      });
-    } catch (error) {
-      console.error('Error playing power-up sound:', error);
-    }
+    this.playEffect('powerUp');
   }
 
   playLevelUpSound() {
-    if (!this.isInitialized || !this.sounds.levelUp) return;
-    
-    try {
-      this.sounds.levelUp.stop(() => {
-        this.sounds.levelUp.play((success) => {
-          if (!success) {
-            console.log('Level up sound playback failed');
-          }
-        });
-      });
-    } catch (error) {
-      console.error('Error playing level up sound:', error);
-    }
+    this.playEffect('levelUp');
   }
 
   setVolume(volume: number) {
-    if (this.backgroundMusic) {
-      this.backgroundMusic.setVolume(volume);
-    }
+    this.backgroundMusic?.setVolume(volume);
   }
 
   releaseAll() {
-    Object.values(this.sounds).forEach(sound => {
+    (Object.values(this.sounds) as DummySound[]).forEach(sound => {
       sound.release();
     });
-    if (this.backgroundMusic) {
-      this.backgroundMusic.release();
-    }
+    this.backgroundMusic?.release();
   }
 }
 

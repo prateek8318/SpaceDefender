@@ -3,7 +3,7 @@ import { BulletEntity, Entity, SystemArgs } from '../types/game.types';
 import { getLevelConfig } from '../utils/levelConfig';
 import { Bullet } from '../components/Bullet';
 
-export const BulletSystem = (entities: Entity[], { screen, dispatch }: SystemArgs, gameState: any) => {
+export const BulletSystem = (entities: Entity[], { dispatch }: SystemArgs, gameState: any) => {
   const currentTime = Date.now();
   const levelConfig = getLevelConfig(gameState.level);
   const fireInterval = gameState.level >= 5 ? 220 : 300;

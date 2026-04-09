@@ -1,437 +1,630 @@
-// === FILE: src/screens/GameScreen.tsx ===
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, TouchableOpacity, Modal, Text, SafeAreaView } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
-import { GameEngine } from 'react-native-game-engine';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { COLORS } from '../utils/colors';
-import { wp, hp, screenWidthPx, screenHeightPx } from '../utils/responsive';
-import { useGameState } from '../hooks/useGameState';
-import { useSounds } from '../hooks/useSounds';
-import { saveScore, saveUnlockedLevel } from '../utils/storage';
-import { PlayerEntity } from '../types/game.types';
-import { PlayerSystem } from '../systems/PlayerSystem';
-import { BulletSystem } from '../systems/BulletSystem';
-import { EnemySystem } from '../systems/EnemySystem';
-import { CollisionSystem } from '../systems/CollisionSystem';
-import { ParticleSystem } from '../systems/ParticleSystem';
+import { GameOverModal } from '../components/GameOverModal';
+import { HUD } from '../components/HUD';
 import { Player } from '../components/Player';
 import { Enemy } from '../components/Enemy';
 import { Bullet } from '../components/Bullet';
-import { Particle } from '../components/Particle';
-import { HUD } from '../components/HUD';
-import { GameOverModal } from '../components/GameOverModal';
 import { BackgroundStars } from '../components/BackgroundStars';
+import { useGameState } from '../hooks/useGameState';
+import { saveScore, saveUnlockedLevel } from '../utils/storage';
+import { COLORS } from '../utils/colors';
+import { hp, screenHeightPx, screenWidthPx, wp } from '../utils/responsive';
+import { getLevelConfig } from '../utils/levelConfig';
 import { soundManager } from '../utils/SoundManager';
 
 interface RouteParams {
   levelId: number;
 }
 
+type EnemyKind = 'basic' | 'fast' | 'tank' | 'boss';
+
+interface EnemyModel {
+  id: string;
+  type: EnemyKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  hp: number;
+  maxHp: number;
+  speed: number;
+  points: number;
+  drift: number;
+  phase: number;
+}
+
+interface BulletModel {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+  vx: number;
+  vy: number;
+  hostile: boolean;
+}
+
+const PLAYER_WIDTH = 60;
+const PLAYER_HEIGHT = 70;
+const PLAYER_START_Y = screenHeightPx - 120;
+const ENEMY_SPEED_MULTIPLIER = 2.45;
+const BULLET_SPEED_MULTIPLIER = 1.9;
+const PLAYER_HIT_COOLDOWN_MS = 650;
+
+const ENEMY_SIZES: Record<EnemyKind, { width: number; height: number }> = {
+  basic: { width: 35, height: 35 },
+  fast: { width: 28, height: 40 },
+  tank: { width: 45, height: 45 },
+  boss: { width: 70, height: 70 },
+};
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const intersects = (a: BulletModel, b: EnemyModel) =>
+  a.x < b.x + b.width &&
+  a.x + a.width > b.x &&
+  a.y < b.y + b.height &&
+  a.y + a.height > b.y;
+
+const makeId = (prefix: string) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 export const GameScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { levelId } = (route.params as RouteParams) || { levelId: 1 };
-  
+
   const {
     gameState,
     startGame,
     pauseGame,
     resumeGame,
-    gameOver,
     reset,
     updateTime,
     updateScore,
     addKill,
     loseLife,
   } = useGameState(levelId);
-  
-  const { playShoot, playExplosion, playLevelUp } = useSounds();
+
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [showGameOverModal, setShowGameOverModal] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
-  const [playerX, setPlayerX] = useState(screenWidthPx / 2 - 20);
-  const [enemies, setEnemies] = useState<any[]>([]);
-  const [bullets, setBullets] = useState<any[]>([]);
-  const gameEngineRef = useRef<any>(null);
-  const updateInterval = useRef<number | null>(null);
-  const enemySpawnInterval = useRef<number | null>(null);
-  const bulletFireInterval = useRef<number | null>(null);
-  const currentPlayerXRef = useRef(screenWidthPx / 2 - 20);
+  const [playerX, setPlayerX] = useState(screenWidthPx / 2 - PLAYER_WIDTH / 2);
+  const [enemies, setEnemies] = useState<EnemyModel[]>([]);
+  const [bullets, setBullets] = useState<BulletModel[]>([]);
 
-  const systems = [
-    (entities: any[], args: any) => {
-      const systemArgs = { ...args, screen: { width: screenWidthPx, height: screenHeightPx } };
-      return PlayerSystem(entities, systemArgs);
-    },
-    (entities: any[], args: any) => {
-      const systemArgs = { ...args, screen: { width: screenWidthPx, height: screenHeightPx } };
-      return BulletSystem(entities, systemArgs, gameState);
-    },
-    (entities: any[], args: any) => {
-      const systemArgs = { ...args, screen: { width: screenWidthPx, height: screenHeightPx } };
-      return EnemySystem(entities, systemArgs, gameState);
-    },
-    (entities: any[], args: any) => {
-      const systemArgs = { ...args, screen: { width: screenWidthPx, height: screenHeightPx } };
-      return CollisionSystem(entities, systemArgs, gameState);
-    },
-    ParticleSystem,
-  ];
+  const playerXRef = useRef(playerX);
+  const gestureStartXRef = useRef(playerX);
+  const enemiesRef = useRef<EnemyModel[]>([]);
+  const bulletsRef = useRef<BulletModel[]>([]);
+  const gameStateRef = useRef(gameState);
+  const levelRef = useRef(gameState.level);
+  const previousLevelRef = useRef(gameState.level);
+  const animationFrameRef = useRef<number | null>(null);
+  const spawnAccumulatorRef = useRef(0);
+  const fireAccumulatorRef = useRef(0);
+  const elapsedAccumulatorRef = useRef(0);
+  const enemyFireAccumulatorRef = useRef(0);
+  const lastFrameTimeRef = useRef(0);
+  const gameOverHandledRef = useRef(false);
+  const playerHitCooldownRef = useRef(0);
 
-  const initialEntities = [
-    {
-      id: 'player',
-      x: screenWidthPx / 2 - 20,
-      y: screenHeightPx - 100,
-      width: 40,
-      height: 50,
-      speed: 5,
-      lives: 3,
-      renderer: Player,
-    },
-  ];
-
-  console.log('GameScreen rendered. Initial entities:', initialEntities.length);
-  console.log('GameEngine ref:', gameEngineRef.current);
-  console.log('Screen dimensions:', screenWidthPx, screenHeightPx);
-  console.log('Player position:', initialEntities[0].x, initialEntities[0].y);
-
-  const handleGameEvent = useCallback(async (event: any) => {
-    switch (event.type) {
-      case 'play-shoot':
-        playShoot();
-        break;
-      case 'play-explosion':
-        playExplosion();
-        break;
-      case 'enemy-killed':
-        updateScore(event.points);
-        addKill();
-        break;
-      case 'next-level':
-        playLevelUp();
-        soundManager.playLevelUpSound();
-        if (gameState.level < 10) {
-          gameState.level++;
-          await saveUnlockedLevel(gameState.level);
-        }
-        break;
-      case 'power-up':
-        soundManager.playPowerUpSound();
-        break;
-    }
-  }, [gameState, playShoot, playExplosion, playLevelUp, gameOver]);
-
-  const handlePanGesture = useCallback((event: any) => {
-    const newX = Math.max(0, Math.min(screenWidthPx - 40, playerX + event.nativeEvent.translationX));
-    setPlayerX(newX);
-    currentPlayerXRef.current = newX; // Update ref for real-time tracking
+  useEffect(() => {
+    playerXRef.current = playerX;
   }, [playerX]);
+
+  useEffect(() => {
+    enemiesRef.current = enemies;
+  }, [enemies]);
+
+  useEffect(() => {
+    bulletsRef.current = bullets;
+  }, [bullets]);
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+    levelRef.current = gameState.level;
+  }, [gameState]);
+
+  const syncEnemies = useCallback((nextEnemies: EnemyModel[]) => {
+    enemiesRef.current = nextEnemies;
+    setEnemies(nextEnemies);
+  }, []);
+
+  const syncBullets = useCallback((nextBullets: BulletModel[]) => {
+    bulletsRef.current = nextBullets;
+    setBullets(nextBullets);
+  }, []);
+
+  const clearLoop = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+  }, []);
+
+  const resetLoopState = useCallback(() => {
+    spawnAccumulatorRef.current = 0;
+    fireAccumulatorRef.current = 0;
+    enemyFireAccumulatorRef.current = 0;
+    elapsedAccumulatorRef.current = 0;
+    lastFrameTimeRef.current = 0;
+    playerHitCooldownRef.current = 0;
+  }, []);
+
+  const createEnemy = useCallback((currentLevel: number): EnemyModel => {
+    const config = getLevelConfig(currentLevel);
+    const isBossLevel = config.bossEvery5;
+    const bossChance = isBossLevel ? 0.18 : 0;
+    const roll = Math.random();
+    let type: EnemyKind = 'basic';
+
+    if (roll < bossChance) {
+      type = 'boss';
+    } else if (roll < 0.2 + currentLevel * 0.005) {
+      type = 'tank';
+    } else if (roll < 0.5) {
+      type = 'fast';
+    }
+
+    const size = ENEMY_SIZES[type];
+    const hpScale = Math.floor((currentLevel - 1) / 3);
+    const speedScale = config.enemySpeed;
+
+    if (type === 'boss') {
+      return {
+        id: makeId('enemy-boss'),
+        type,
+        x: Math.random() * Math.max(1, screenWidthPx - size.width),
+        y: -size.height,
+        width: size.width,
+        height: size.height,
+        hp: 6 + Math.floor(currentLevel / 2),
+        maxHp: 6 + Math.floor(currentLevel / 2),
+        speed: (110 + speedScale * 24) * ENEMY_SPEED_MULTIPLIER,
+        points: 60 + currentLevel * 5,
+        drift: 42 + currentLevel * 1.5,
+        phase: Math.random() * Math.PI * 2,
+      };
+    }
+
+    if (type === 'tank') {
+      return {
+        id: makeId('enemy-tank'),
+        type,
+        x: Math.random() * Math.max(1, screenWidthPx - size.width),
+        y: -size.height,
+        width: size.width,
+        height: size.height,
+        hp: 2 + hpScale,
+        maxHp: 2 + hpScale,
+        speed: (135 + speedScale * 30) * ENEMY_SPEED_MULTIPLIER,
+        points: 20 + currentLevel * 2,
+        drift: 18 + currentLevel * 0.7,
+        phase: Math.random() * Math.PI * 2,
+      };
+    }
+
+    if (type === 'fast') {
+      return {
+        id: makeId('enemy-fast'),
+        type,
+        x: Math.random() * Math.max(1, screenWidthPx - size.width),
+        y: -size.height,
+        width: size.width,
+        height: size.height,
+        hp: 1,
+        maxHp: 1,
+        speed: (185 + speedScale * 38) * ENEMY_SPEED_MULTIPLIER,
+        points: 14 + currentLevel,
+        drift: 30 + currentLevel,
+        phase: Math.random() * Math.PI * 2,
+      };
+    }
+
+    return {
+      id: makeId('enemy-basic'),
+      type,
+      x: Math.random() * Math.max(1, screenWidthPx - size.width),
+      y: -size.height,
+      width: size.width,
+      height: size.height,
+      hp: 1 + Math.floor(hpScale / 2),
+      maxHp: 1 + Math.floor(hpScale / 2),
+      speed: (145 + speedScale * 28) * ENEMY_SPEED_MULTIPLIER,
+      points: 10 + currentLevel,
+      drift: 14 + currentLevel * 0.5,
+      phase: Math.random() * Math.PI * 2,
+    };
+  }, []);
+
+  const createBullets = useCallback((currentLevel: number): BulletModel[] => {
+    const config = getLevelConfig(currentLevel);
+    const bulletCount = config.tripleShot ? 3 : config.doubleShot ? 2 : 1;
+    const spread = bulletCount === 1 ? [0] : bulletCount === 2 ? [-12, 12] : [-18, 0, 18];
+    const originX = playerXRef.current + PLAYER_WIDTH / 2 - 2;
+    const bulletSpeed = (760 + currentLevel * 18) * BULLET_SPEED_MULTIPLIER;
+
+    return spread.map(offset => ({
+      id: makeId('bullet'),
+      x: originX + offset,
+      y: PLAYER_START_Y,
+      width: 6,
+      height: 18,
+      speed: bulletSpeed,
+      vx: 0,
+      vy: -bulletSpeed,
+      hostile: false,
+    }));
+  }, []);
+
+  const createEnemyBullets = useCallback((enemy: EnemyModel, currentLevel: number): BulletModel[] => {
+    const downwardSpeed = 380 + currentLevel * 18;
+    const originX = enemy.x + enemy.width / 2 - 3;
+    const originY = enemy.y + enemy.height - 6;
+
+    if (enemy.type === 'boss') {
+      return [-150, -60, 0, 60, 150].map(vx => ({
+        id: makeId('enemy-bullet'),
+        x: originX,
+        y: originY,
+        width: 8,
+        height: 20,
+        speed: downwardSpeed,
+        vx,
+        vy: downwardSpeed + Math.abs(vx) * 0.2,
+        hostile: true,
+      }));
+    }
+
+    return [
+      {
+        id: makeId('enemy-bullet'),
+        x: originX,
+        y: originY,
+        width: 7,
+        height: 18,
+        speed: downwardSpeed,
+        vx: enemy.type === 'fast' ? Math.sin(enemy.phase) * 45 : 0,
+        vy: downwardSpeed,
+        hostile: true,
+      },
+    ];
+  }, []);
 
   const handlePause = useCallback(() => {
     pauseGame();
     setShowPauseModal(true);
-    // Stop background music when paused
     soundManager.stopBackgroundMusic();
-  }, []);
+  }, [pauseGame]);
 
   const handleResume = useCallback(() => {
     resumeGame();
     setShowPauseModal(false);
-    // Resume background music
     soundManager.playBackgroundMusic(true);
-  }, []);
-
-  const handleRetry = useCallback(() => {
-    reset();
-    setShowGameOverModal(false);
-    startGame();
-  }, []);
+  }, [resumeGame]);
 
   const handleHome = useCallback(() => {
+    clearLoop();
+    soundManager.stopBackgroundMusic();
     navigation.goBack();
-  }, []);
+  }, [clearLoop, navigation]);
+
+  const handleRetry = useCallback(() => {
+    clearLoop();
+    reset();
+    setShowGameOverModal(false);
+    setGameStarted(false);
+    setEnemies([]);
+    setBullets([]);
+    enemiesRef.current = [];
+    bulletsRef.current = [];
+    resetLoopState();
+    gameOverHandledRef.current = false;
+    setPlayerX(screenWidthPx / 2 - PLAYER_WIDTH / 2);
+    playerXRef.current = screenWidthPx / 2 - PLAYER_WIDTH / 2;
+  }, [clearLoop, reset, resetLoopState]);
 
   const handleStartGame = useCallback(() => {
+    gameOverHandledRef.current = false;
+    setShowGameOverModal(false);
+    setShowPauseModal(false);
     setGameStarted(true);
+    setEnemies([]);
+    setBullets([]);
+    enemiesRef.current = [];
+    bulletsRef.current = [];
+    resetLoopState();
     startGame();
-    
-    // Start background music
     soundManager.playBackgroundMusic(true);
-    
-    updateInterval.current = setInterval(() => {
-      updateTime();
-    }, 100);
+  }, [resetLoopState, startGame]);
 
-    // Spawn enemies - different rates for boss levels
-    const isBossLevel = levelId % 5 === 0;
-    const spawnRate = isBossLevel ? 800 : 2500; // Faster spawn in boss levels
-    const maxEnemies = isBossLevel ? 20 : 15; // More enemies in boss levels
-    
-    enemySpawnInterval.current = setInterval(() => {
-      setEnemies(prev => {
-        if (prev.length >= maxEnemies) return prev;
-        
-        // Create tougher enemies in boss levels
-        const enemyTypes = isBossLevel ? ['tank', 'fast', 'basic'] : ['basic', 'fast'];
-        const randomType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-        
-        let hp = 1;
-        if (randomType === 'tank') hp = isBossLevel ? 3 : 2;
-        if (randomType === 'fast') hp = 1;
-        if (randomType === 'basic') hp = 1;
-        
-        // Add boss enemy every 10 spawns in boss levels
-        if (isBossLevel && Math.random() < 0.1) {
-          return [...prev, {
-            id: Date.now(),
-            type: 'boss',
-            x: Math.random() * (screenWidthPx - 60),
-            y: -60,
-            width: 60,
-            height: 60,
-            hp: 5,
-          }];
+  const handlePanGesture = useCallback((event: any) => {
+    const { state, translationX } = event.nativeEvent;
+
+    if (state === State.ACTIVE) {
+      const nextX = clamp(
+        gestureStartXRef.current + translationX,
+        0,
+        screenWidthPx - PLAYER_WIDTH,
+      );
+      playerXRef.current = nextX;
+      setPlayerX(nextX);
+      return;
+    }
+
+    if (state === State.END || state === State.CANCELLED || state === State.BEGAN) {
+      gestureStartXRef.current = playerXRef.current;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!gameStarted || gameState.status !== 'playing') {
+      clearLoop();
+      return;
+    }
+
+    const updateFrame = (timestamp: number) => {
+      const currentState = gameStateRef.current;
+      if (currentState.status !== 'playing') {
+        animationFrameRef.current = requestAnimationFrame(updateFrame);
+        return;
+      }
+
+      if (!lastFrameTimeRef.current) {
+        lastFrameTimeRef.current = timestamp;
+      }
+
+      const deltaMs = Math.min(32, timestamp - lastFrameTimeRef.current);
+      lastFrameTimeRef.current = timestamp;
+      const deltaSeconds = deltaMs / 1000;
+      const currentLevel = levelRef.current;
+      const levelConfig = getLevelConfig(currentLevel);
+      const maxEnemies = levelConfig.bossEvery5 ? 18 : 11;
+      const maxBullets = levelConfig.tripleShot ? 34 : levelConfig.doubleShot ? 28 : 24;
+      const fireDelay = levelConfig.bossEvery5 ? 120 : 90;
+      const enemyFireDelay = levelConfig.bossEvery5 ? 650 : Math.max(900, 1500 - currentLevel * 35);
+
+      spawnAccumulatorRef.current += deltaMs;
+      fireAccumulatorRef.current += deltaMs;
+      enemyFireAccumulatorRef.current += deltaMs;
+      elapsedAccumulatorRef.current += deltaMs;
+
+      let nextEnemies = enemiesRef.current;
+      let nextBullets = bulletsRef.current;
+
+      const spawnDelay = Math.max(180, levelConfig.enemyInterval * 0.45);
+
+      if (spawnAccumulatorRef.current >= spawnDelay && nextEnemies.length < maxEnemies) {
+        spawnAccumulatorRef.current = 0;
+        const spawnedEnemies = [createEnemy(currentLevel)];
+        if (levelConfig.bossEvery5) {
+          spawnedEnemies.push(createEnemy(Math.max(1, currentLevel - 1)));
+        } else if (currentLevel >= 8 && Math.random() > 0.55) {
+          spawnedEnemies.push(createEnemy(currentLevel));
         }
-        
-        return [...prev, {
-          id: Date.now(),
-          type: randomType,
-          x: Math.random() * (screenWidthPx - 30),
-          y: -30,
-          width: randomType === 'tank' ? 45 : 30,
-          height: randomType === 'tank' ? 45 : 30,
-          hp: hp,
-        }];
-      });
-    }, spawnRate);
+        nextEnemies = [...nextEnemies, ...spawnedEnemies.slice(0, Math.max(0, maxEnemies - nextEnemies.length))];
+      }
 
-    // Fire bullets - different rates for boss levels
-    const bulletCount = isBossLevel ? 2 : 1; // 2 bullets in boss levels
-    const fireRate = isBossLevel ? 400 : 200; // Slower fire rate in boss levels
-    
-    bulletFireInterval.current = setInterval(() => {
-      setBullets(prev => {
-        const maxBullets = isBossLevel ? 8 : 12; // Fewer bullets in boss levels
-        if (prev.length >= maxBullets) return prev;
-        
-        const currentX = currentPlayerXRef.current + 18;
-        
-        // Play shoot sound
+      if (fireAccumulatorRef.current >= fireDelay && nextBullets.length < maxBullets) {
+        fireAccumulatorRef.current = 0;
+        nextBullets = [...nextBullets, ...createBullets(currentLevel)];
         soundManager.playShootSound();
-        
-        const newBullets = [];
-        for (let i = 0; i < bulletCount; i++) {
-          const offsetX = (i - (bulletCount - 1) / 2) * 15; // Spread bullets
-          newBullets.push({
-            id: Date.now() + i,
-            x: currentX + offsetX,
-            y: screenHeightPx - 100,
-            width: 4,
-            height: 12,
-          });
+      }
+
+      if (enemyFireAccumulatorRef.current >= enemyFireDelay) {
+        enemyFireAccumulatorRef.current = 0;
+        const shooters = nextEnemies.filter(enemy =>
+          enemy.type === 'boss' ||
+          (currentLevel >= 4 && enemy.type === 'tank') ||
+          (currentLevel >= 9 && enemy.type === 'fast' && Math.random() > 0.45),
+        );
+
+        if (shooters.length > 0) {
+          const pickedShooters = shooters
+            .sort((a, b) => b.y - a.y)
+            .slice(0, levelConfig.bossEvery5 ? 2 : 1);
+
+          const hostileBullets = pickedShooters.flatMap(enemy => createEnemyBullets(enemy, currentLevel));
+          nextBullets = [...nextBullets, ...hostileBullets].slice(-maxBullets);
         }
-        
-        return [...prev, ...newBullets];
-      });
-    }, fireRate);
-  }, [startGame, updateTime, playerX]);
-
-  useEffect(() => {
-    if (gameStarted) {
-      return () => {
-        if (updateInterval.current) clearInterval(updateInterval.current);
-        if (enemySpawnInterval.current) clearInterval(enemySpawnInterval.current);
-        if (bulletFireInterval.current) clearInterval(bulletFireInterval.current);
-        // Stop music when component unmounts
-        soundManager.stopBackgroundMusic();
-      };
-    }
-  }, [gameStarted]);
-
-  // Optimized movement logic with better performance
-  useEffect(() => {
-    if (!gameStarted) return;
-
-    let lastUpdateTime = Date.now();
-    const targetFPS = 60; // Increased to 60 for fast smooth gameplay
-    const frameInterval = 1000 / targetFPS;
-
-    const gameLoop = () => {
-      const now = Date.now();
-      const deltaTime = now - lastUpdateTime;
-      
-      if (deltaTime >= frameInterval) {
-        // Update enemies
-        setEnemies(prev => {
-          if (!prev || !Array.isArray(prev)) return [];
-          return prev
-            .map(enemy => {
-              const newY = (enemy.y || 0) + 6; // Much faster enemy movement
-              
-              // Check if enemy reached bottom
-              if (newY > screenHeightPx - 50) {
-                loseLife();
-                return null;
-              }
-              
-              return { ...enemy, y: newY };
-            })
-            .filter(enemy => enemy !== null && enemy.y < screenHeightPx + 50);
-        });
-
-        // Update bullets
-        setBullets(prev => {
-          if (!prev || !Array.isArray(prev)) return [];
-          return prev
-            .map(bullet => ({ ...bullet, y: (bullet.y || 0) - 20 })) // Much faster bullets
-            .filter(bullet => bullet.y > -20);
-        });
-
-        lastUpdateTime = now;
       }
-      
-      requestAnimationFrame(gameLoop);
-    };
 
-    const animationId = requestAnimationFrame(gameLoop);
+      if (elapsedAccumulatorRef.current >= 200) {
+        elapsedAccumulatorRef.current = 0;
+        updateTime();
+      }
 
-    // Separate collision detection with lower frequency
-    const collisionInterval = setInterval(() => {
-      setBullets(prevBullets => {
-        if (!prevBullets || !Array.isArray(prevBullets)) return [];
-        
-        const hitBullets = new Set<number>();
-        
-        setEnemies(prevEnemies => {
-          if (!prevEnemies || !Array.isArray(prevEnemies)) return [];
-          
-          return prevEnemies.filter(enemy => {
-            let hit = false;
-            
-            for (const bullet of prevBullets) {
-              if (hitBullets.has(bullet.id)) continue;
-              
-              // Get enemy dimensions based on type
-              const enemyWidth = enemy.type === 'boss' ? 60 : (enemy.type === 'tank' ? 45 : 30);
-              const enemyHeight = enemy.type === 'boss' ? 60 : (enemy.type === 'tank' ? 45 : 30);
-              
-              // Simple AABB collision detection
-              if (bullet.x < enemy.x + enemyWidth &&
-                  bullet.x + 4 > enemy.x &&
-                  bullet.y < enemy.y + enemyHeight &&
-                  bullet.y + 12 > enemy.y) {
-                
-                hit = true;
-                hitBullets.add(bullet.id);
-                
-                // Reduce enemy HP
-                if (enemy.hp > 1) {
-                  enemy.hp--;
-                  console.log(`Enemy hit! HP remaining: ${enemy.hp}`);
-                } else {
-                  // Enemy destroyed
-                  updateScore(10);
-                  addKill();
-                  soundManager.playExplosionSound();
-                }
-                break; // One bullet hit per enemy
-              }
+      let lifeLostThisFrame = 0;
+
+      nextEnemies = nextEnemies
+        .map(enemy => {
+          const nextY = enemy.y + enemy.speed * deltaSeconds;
+          const waveOffset = Math.sin((timestamp / 260) + enemy.phase + enemy.y * 0.012) * enemy.drift * deltaSeconds;
+          const nextX = clamp(enemy.x + waveOffset, 0, screenWidthPx - enemy.width);
+          if (nextY > screenHeightPx) {
+            lifeLostThisFrame += 1;
+            return null;
+          }
+
+          return {
+            ...enemy,
+            x: nextX,
+            y: nextY,
+          };
+        })
+        .filter((enemy): enemy is EnemyModel => enemy !== null);
+
+      nextBullets = nextBullets
+        .map(bullet => ({
+          ...bullet,
+          x: bullet.x + bullet.vx * deltaSeconds,
+          y: bullet.y + bullet.vy * deltaSeconds,
+        }))
+        .filter(
+          bullet =>
+            bullet.y + bullet.height > -30 &&
+            bullet.y < screenHeightPx + 40 &&
+            bullet.x + bullet.width > -20 &&
+            bullet.x < screenWidthPx + 20,
+        );
+
+      const playerBullets = nextBullets.filter(bullet => !bullet.hostile);
+      let hostileBullets = nextBullets.filter(bullet => bullet.hostile);
+      const survivingEnemies: EnemyModel[] = [];
+      let remainingBullets = playerBullets;
+
+      for (const enemy of nextEnemies) {
+        let updatedEnemy = enemy;
+        let destroyed = false;
+        const nextRemainingBullets: BulletModel[] = [];
+
+        for (const bullet of remainingBullets) {
+          if (!destroyed && intersects(bullet, updatedEnemy)) {
+            const nextHp = updatedEnemy.hp - 1;
+            if (nextHp <= 0) {
+              updateScore(updatedEnemy.points);
+              addKill();
+              soundManager.playExplosionSound();
+              destroyed = true;
+            } else {
+              updatedEnemy = {
+                ...updatedEnemy,
+                hp: nextHp,
+              };
             }
-            
-            return !hit;
-          });
-        });
-        
-        return prevBullets.filter(bullet => !hitBullets.has(bullet.id));
-      });
-    }, 50); // Collision detection at 20Hz
+            continue;
+          }
 
-    return () => {
-      cancelAnimationFrame(animationId);
-      clearInterval(collisionInterval);
-    };
-  }, [gameStarted, screenHeightPx, loseLife, updateScore, addKill]);
+          nextRemainingBullets.push(bullet);
+        }
 
-  
-  useEffect(() => {
-    console.log('GameEngine effect - gameState.status:', gameState.status);
-    if (gameEngineRef.current && gameState.status === 'playing') {
-      console.log('Starting GameEngine');
-      gameEngineRef.current.start();
-    } else if (gameEngineRef.current && gameState.status === 'paused') {
-      console.log('Stopping GameEngine');
-      gameEngineRef.current.stop();
-    }
-  }, [gameState.status]);
+        if (!destroyed) {
+          survivingEnemies.push(updatedEnemy);
+        }
 
-  // Game over handling
-  useEffect(() => {
-    if (gameState.status === 'over') {
-      console.log('Game over triggered! Score:', gameState.score, 'Level:', gameState.level);
-      
-      // Stop background music and play game over sound
-      soundManager.stopBackgroundMusic();
-      soundManager.playGameOverSound();
-      
-      gameOver();
-      setShowGameOverModal(true);
-      
-      // Save score with debug
-      console.log('Saving score to storage...');
-      saveScore(gameState.score, gameState.level).then(() => {
-        console.log('Score saved successfully!');
-      }).catch(err => {
-        console.error('Error saving score:', err);
-      });
-      
-      if (gameState.level > 1) {
-        console.log('Saving unlocked level:', gameState.level);
-        saveUnlockedLevel(gameState.level).then(() => {
-          console.log('Level saved successfully!');
-        }).catch(err => {
-          console.error('Error saving level:', err);
-        });
+        remainingBullets = nextRemainingBullets;
       }
+
+      nextEnemies = survivingEnemies;
+
+      if (playerHitCooldownRef.current > 0) {
+        playerHitCooldownRef.current = Math.max(0, playerHitCooldownRef.current - deltaMs);
+      }
+
+      const safeHostileBullets: BulletModel[] = [];
+      const playerBounds = {
+        x: playerXRef.current + 8,
+        y: PLAYER_START_Y + 8,
+        width: PLAYER_WIDTH - 16,
+        height: PLAYER_HEIGHT - 18,
+      };
+
+      for (const bullet of hostileBullets) {
+        const hitsPlayer =
+          bullet.x < playerBounds.x + playerBounds.width &&
+          bullet.x + bullet.width > playerBounds.x &&
+          bullet.y < playerBounds.y + playerBounds.height &&
+          bullet.y + bullet.height > playerBounds.y;
+
+        if (hitsPlayer && playerHitCooldownRef.current === 0) {
+          playerHitCooldownRef.current = PLAYER_HIT_COOLDOWN_MS;
+          loseLife();
+          soundManager.playExplosionSound();
+          continue;
+        }
+
+        if (!hitsPlayer) {
+          safeHostileBullets.push(bullet);
+        }
+      }
+
+      nextBullets = [...remainingBullets, ...safeHostileBullets];
+
+      if (lifeLostThisFrame > 0) {
+        Array.from({ length: lifeLostThisFrame }).forEach(() => loseLife());
+      }
+
+      syncEnemies(nextEnemies);
+      syncBullets(nextBullets);
+
+      animationFrameRef.current = requestAnimationFrame(updateFrame);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(updateFrame);
+
+    return clearLoop;
+  }, [
+    addKill,
+    clearLoop,
+    createBullets,
+    createEnemy,
+    createEnemyBullets,
+    gameStarted,
+    gameState.status,
+    loseLife,
+    syncBullets,
+    syncEnemies,
+    updateScore,
+    updateTime,
+  ]);
+
+  useEffect(() => {
+    if (gameState.level > previousLevelRef.current) {
+      previousLevelRef.current = gameState.level;
+      soundManager.playLevelUpSound();
+      saveUnlockedLevel(gameState.level);
+      return;
     }
-  }, [gameState.status, gameOver, gameState.score, gameState.level]);
+
+    previousLevelRef.current = gameState.level;
+  }, [gameState.level]);
+
+  useEffect(() => {
+    if (gameState.status !== 'over' || gameOverHandledRef.current) {
+      return;
+    }
+
+    gameOverHandledRef.current = true;
+    clearLoop();
+    soundManager.stopBackgroundMusic();
+    soundManager.playGameOverSound();
+    setShowGameOverModal(true);
+    saveScore(gameState.score, gameState.level);
+    if (gameState.level > 1) {
+      saveUnlockedLevel(gameState.level);
+    }
+  }, [clearLoop, gameState.level, gameState.score, gameState.status]);
+
+  useEffect(() => {
+    return () => {
+      clearLoop();
+      soundManager.stopBackgroundMusic();
+    };
+  }, [clearLoop]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <PanGestureHandler onGestureEvent={handlePanGesture}>
+      <PanGestureHandler onGestureEvent={handlePanGesture} onHandlerStateChange={handlePanGesture}>
         <View style={styles.gameContainer}>
-          {/* Background Stars */}
           <BackgroundStars />
-          
-          {/* Player Ship */}
-          <View style={[styles.playerContainer, { left: playerX, top: screenHeightPx - 100 }]}>
-            <View style={styles.engineGlow} />
-            <View style={styles.mainBody} />
-            <View style={styles.cockpit} />
-          </View>
+          <Player x={playerX} y={PLAYER_START_Y} width={PLAYER_WIDTH} height={PLAYER_HEIGHT} />
 
-          {/* Enemies */}
-          {enemies && enemies.map(enemy => (
-            <View key={enemy.id} style={[styles.enemyContainer, { left: enemy.x || 0, top: enemy.y || 0 }]}>
-              <View style={styles.enemyBody} />
-            </View>
+          {enemies.map(enemy => (
+            <Enemy key={enemy.id} {...enemy} />
           ))}
 
-          {/* Bullets */}
-          {bullets && bullets.map(bullet => (
-            <View key={bullet.id} style={[styles.bulletContainer, { left: bullet.x || 0, top: bullet.y || 0 }]}>
-              <View style={styles.bulletBody} />
-            </View>
+          {bullets.map(bullet => (
+            <Bullet key={bullet.id} {...bullet} />
           ))}
-          
-          <HUD
-            score={gameState.score}
-            lives={gameState.lives}
-            level={gameState.level}
-          />
-          
-          {gameStarted && (
+
+          <HUD score={gameState.score} lives={gameState.lives} level={gameState.level} />
+
+          {gameStarted && gameState.status === 'playing' && (
             <TouchableOpacity style={styles.pauseButton} onPress={handlePause}>
               <View style={styles.pauseIcon} />
             </TouchableOpacity>
@@ -451,12 +644,7 @@ export const GameScreen: React.FC = () => {
         </View>
       )}
 
-      <Modal
-        visible={showPauseModal}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-      >
+      <Modal visible={showPauseModal} transparent animationType="fade" statusBarTranslucent>
         <View style={styles.pauseOverlay}>
           <View style={styles.pauseModal}>
             <TouchableOpacity style={styles.resumeButton} onPress={handleResume}>
@@ -487,13 +675,11 @@ const styles = StyleSheet.create({
   },
   gameContainer: {
     flex: 1,
-  },
-  gameEngine: {
-    flex: 1,
+    position: 'relative',
   },
   pauseButton: {
     position: 'absolute',
-    top: hp(10), // Moved down to avoid HUD overlap
+    top: hp(10),
     right: wp(4),
     width: wp(10),
     height: wp(10),
@@ -586,82 +772,5 @@ const styles = StyleSheet.create({
     color: COLORS.bg,
     fontSize: wp(5),
     fontWeight: 'bold',
-  },
-  testPlayer: {
-    position: 'absolute',
-    width: 40,
-    height: 50,
-  },
-  testPlayerBody: {
-    position: 'absolute',
-    width: 30,
-    height: 35,
-    backgroundColor: 'red',
-    left: 5,
-    top: 10,
-    borderRadius: 15,
-  },
-  // Player styles for direct rendering
-  playerContainer: {
-    position: 'absolute',
-    width: 40,
-    height: 50,
-  },
-  engineGlow: {
-    position: 'absolute',
-    width: 20,
-    height: 8,
-    backgroundColor: COLORS.accent,
-    left: 10,
-    bottom: 5,
-    borderRadius: 4,
-    opacity: 0.8,
-  },
-  mainBody: {
-    position: 'absolute',
-    width: 30,
-    height: 35,
-    backgroundColor: COLORS.primary,
-    left: 5,
-    top: 10,
-    borderRadius: 15,
-    borderTopLeftRadius: 5,
-    borderTopRightRadius: 5,
-  },
-  cockpit: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    backgroundColor: COLORS.white,
-    left: 16,
-    top: 20,
-    borderRadius: 4,
-  },
-  // Enemy styles
-  enemyContainer: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-  },
-  enemyBody: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    backgroundColor: COLORS.danger,
-    borderRadius: 8,
-    transform: [{ rotate: '45deg' }],
-  },
-  // Bullet styles
-  bulletContainer: {
-    position: 'absolute',
-    width: 4,
-    height: 12,
-  },
-  bulletBody: {
-    position: 'absolute',
-    width: 4,
-    height: 12,
-    backgroundColor: COLORS.primary,
-    borderRadius: 2,
   },
 });

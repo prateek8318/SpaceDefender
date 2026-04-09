@@ -12,16 +12,16 @@ export interface Level {
 export const LEVELS: Level[] = Array.from({ length: 500 }, (_, index) => {
   const levelId = index + 1;
   const isBossLevel = levelId % 5 === 0;
-  
-  // Progressive difficulty scaling
-  const baseInterval = Math.max(200, 1400 - (levelId * 2.4)); // Decreases from 1400 to 200
-  const baseSpeed = Math.min(5.0, 0.9 + (levelId * 0.0082)); // Increases from 0.9 to 5.0
-  const baseKills = Math.min(50, 5 + Math.floor(levelId / 10)); // Increases from 5 to 50
-  
-  // Power-ups unlock at specific levels
+  const stageRamp = Math.floor((levelId - 1) / 5);
+  const bossModifier = isBossLevel ? 0.76 : 1;
+
+  const baseInterval = Math.max(170, (1200 - levelId * 10 - stageRamp * 22) * bossModifier);
+  const baseSpeed = Math.min(8.8, 1.15 + levelId * 0.085 + stageRamp * 0.18 + (isBossLevel ? 0.85 : 0));
+  const baseKills = Math.min(70, 5 + Math.floor(levelId / 2) + (isBossLevel ? 3 : 0));
+
   const doubleShot = levelId >= 3;
   const tripleShot = levelId >= 6;
-  
+
   return {
     id: levelId,
     enemyInterval: baseInterval,

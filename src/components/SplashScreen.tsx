@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, ImageBackground } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Animated, Dimensions, ImageBackground } from 'react-native';
 import { COLORS } from '../utils/colors';
 import { wp, hp } from '../utils/responsive';
 

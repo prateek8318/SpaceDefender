@@ -1,8 +1,7 @@
-// === FILE: src/components/HUD.tsx ===
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { COLORS } from '../utils/colors';
-import { wp, hp } from '../utils/responsive';
+import { hp, wp } from '../utils/responsive';
 
 interface HUDProps {
   score: number;
@@ -11,124 +10,123 @@ interface HUDProps {
 }
 
 export const HUD: React.FC<HUDProps> = ({ score, lives, level }) => {
-  // Animation values
   const scoreAnim = useRef(new Animated.Value(0)).current;
   const livesAnim = useRef(new Animated.Value(0)).current;
   const levelAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Animate score changes
   useEffect(() => {
+    scoreAnim.setValue(0);
     Animated.timing(scoreAnim, {
       toValue: 1,
-      duration: 300,
+      duration: 220,
       useNativeDriver: true,
     }).start();
-  }, [score]);
+  }, [score, scoreAnim]);
 
-  // Animate lives changes
   useEffect(() => {
+    livesAnim.setValue(0);
     Animated.timing(livesAnim, {
       toValue: 1,
-      duration: 300,
+      duration: 220,
       useNativeDriver: true,
     }).start();
-  }, [lives]);
+  }, [lives, livesAnim]);
 
-  // Animate level changes
   useEffect(() => {
+    levelAnim.setValue(0);
     Animated.timing(levelAnim, {
       toValue: 1,
-      duration: 500,
+      duration: 280,
       useNativeDriver: true,
     }).start();
-  }, [level]);
+  }, [level, levelAnim]);
 
-  // Continuous pulse animation for level badge
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 1000,
+          toValue: 1.06,
+          duration: 900,
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 1000,
+          duration: 900,
           useNativeDriver: true,
         }),
-      ])
-    ).start();
-  }, []);
+      ]),
+    );
+
+    loop.start();
+    return () => loop.stop();
+  }, [pulseAnim]);
 
   return (
     <View style={styles.container}>
-      {/* Lives Section */}
       <Animated.View
         style={[
-          styles.livesContainer,
+          styles.sideContainer,
           {
             opacity: livesAnim,
-            transform: [{ scale: livesAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0.8, 1],
-            })}],
-          },
-        ]}
-      >
-        <View style={styles.livesCard}>
-          <Text style={styles.livesLabel}>LIVES</Text>
-          <View style={styles.heartsContainer}>
-            {Array.from({ length: Math.max(0, lives) }, (_, i) => (
-              <Text key={i} style={styles.heartIcon}>❤️</Text>
-            ))}
-            {Array.from({ length: Math.max(0, 3 - lives) }, (_, i) => (
-              <Text key={`empty-${i}`} style={styles.emptyHeartIcon}>🖤</Text>
-            ))}
-          </View>
-        </View>
-      </Animated.View>
-      
-      {/* Level Section */}
-      <Animated.View
-        style={[
-          styles.levelContainer,
-          {
-            opacity: levelAnim,
             transform: [
-              { scale: pulseAnim },
-              { translateY: levelAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [-20, 0],
-              })},
+              {
+                scale: livesAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.92, 1],
+                }),
+              },
             ],
           },
         ]}
       >
-        <View style={styles.levelCard}>
-          <View style={styles.levelBadge}>
-            <Text style={styles.levelText}>LEVEL {level}</Text>
-          </View>
+        <View style={styles.card}>
+          <Text style={styles.label}>LIVES</Text>
+          <Text style={styles.value}>{`${Math.max(0, lives)}/3`}</Text>
         </View>
       </Animated.View>
-      
-      {/* Score Section */}
+
       <Animated.View
         style={[
-          styles.scoreContainer,
+          styles.centerContainer,
           {
-            opacity: scoreAnim,
-            transform: [{ scale: scoreAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0.8, 1],
-            })}],
+            opacity: levelAnim,
+            transform: [
+              { scale: pulseAnim },
+              {
+                translateY: levelAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-10, 0],
+                }),
+              },
+            ],
           },
         ]}
       >
-        <View style={styles.scoreCard}>
-          <Text style={styles.scoreLabel}>SCORE</Text>
-          <Text style={styles.scoreText}>{score.toLocaleString()}</Text>
+        <View style={styles.levelBadge}>
+          <Text style={styles.levelText}>LEVEL {level}</Text>
+        </View>
+      </Animated.View>
+
+      <Animated.View
+        style={[
+          styles.sideContainer,
+          {
+            opacity: scoreAnim,
+            transform: [
+              {
+                scale: scoreAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.92, 1],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <View style={styles.card}>
+          <Text style={styles.label}>SCORE</Text>
+          <Text style={styles.value}>{score.toLocaleString()}</Text>
         </View>
       </Animated.View>
     </View>
@@ -141,112 +139,51 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: hp(12),
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: wp(4),
     paddingTop: hp(2),
     zIndex: 1000,
   },
-  livesContainer: {
+  sideContainer: {
     flex: 1,
-    alignItems: 'flex-start',
   },
-  livesCard: {
-    backgroundColor: 'rgba(255, 107, 107, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 107, 0.3)',
-    borderRadius: wp(3),
-    paddingHorizontal: wp(2),
-    paddingVertical: hp(1),
+  centerContainer: {
+    flex: 1,
     alignItems: 'center',
   },
-  livesLabel: {
+  card: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    borderRadius: wp(3),
+    paddingHorizontal: wp(3),
+    paddingVertical: hp(0.8),
+  },
+  label: {
     color: COLORS.muted,
-    fontSize: wp(2.5),
-    fontWeight: '600',
-    marginBottom: hp(0.5),
+    fontSize: wp(2.6),
+    fontWeight: '700',
     letterSpacing: 1,
   },
-  heartsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  heartIcon: {
-    fontSize: wp(5),
-    marginHorizontal: wp(0.5),
-  },
-  emptyHeartIcon: {
-    fontSize: wp(5),
-    marginHorizontal: wp(0.5),
-    opacity: 0.3,
-  },
-  levelContainer: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  levelCard: {
-    position: 'relative',
+  value: {
+    color: COLORS.text,
+    fontSize: wp(4.5),
+    fontWeight: '900',
+    marginTop: hp(0.4),
   },
   levelBadge: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: wp(3),
-    paddingVertical: hp(1),
     borderRadius: wp(3),
-  },
-  levelGlow: {
-    position: 'absolute',
-    top: -10,
-    left: -10,
-    right: -10,
-    bottom: -10,
-    backgroundColor: COLORS.primary,
-    borderRadius: wp(6),
-    opacity: 0.2,
-    filter: 'blur(20px)',
+    paddingHorizontal: wp(4),
+    paddingVertical: hp(1),
   },
   levelText: {
     color: COLORS.bg,
     fontSize: wp(4),
     fontWeight: '900',
     letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  scoreContainer: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  scoreCard: {
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.3)',
-    borderRadius: wp(3),
-    paddingHorizontal: wp(2),
-    paddingVertical: hp(1),
-    alignItems: 'center',
-  },
-  scoreGlow: {
-    position: 'absolute',
-    top: -8,
-    left: -8,
-    right: -8,
-    bottom: -8,
-    backgroundColor: COLORS.accent,
-    borderRadius: wp(4),
-    opacity: 0.15,
-    filter: 'blur(15px)',
-  },
-  scoreLabel: {
-    color: COLORS.muted,
-    fontSize: wp(2.5),
-    fontWeight: '600',
-    marginBottom: hp(0.5),
-    letterSpacing: 1,
-  },
-  scoreText: {
-    color: COLORS.accent,
-    fontSize: wp(5),
-    fontWeight: '900',
   },
 });

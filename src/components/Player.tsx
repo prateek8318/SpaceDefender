@@ -1,11 +1,9 @@
 // === FILE: src/components/Player.tsx ===
-import React from 'react';
+import React, { memo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { PlayerEntity } from '../types/game.types';
 import { COLORS } from '../utils/colors';
 
-export const Player: React.FC<any> = (props) => {
-  console.log('Player component rendering:', props);
+export const Player: React.FC<any> = memo((props) => {
   if (!props) {
     return null;
   }
@@ -51,7 +49,7 @@ export const Player: React.FC<any> = (props) => {
       <View style={styles.exhaustParticles} />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

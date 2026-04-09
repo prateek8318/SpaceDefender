@@ -44,6 +44,8 @@ export interface GameState {
   status: GameStatus;
   kills: number;
   timeElapsed: number;
+  lastEnemySpawnTime: number;
+  lastBulletTime: number;
 }
 
 export interface GameEngineProps {

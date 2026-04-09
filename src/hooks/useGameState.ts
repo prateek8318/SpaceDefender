@@ -11,6 +11,8 @@ export const useGameState = (initialLevel: number = 1) => {
     status: 'idle',
     kills: 0,
     timeElapsed: 0,
+    lastEnemySpawnTime: 0,
+    lastBulletTime: 0,
   });
 
   const lastBulletTime = useRef<number>(0);
@@ -18,12 +20,17 @@ export const useGameState = (initialLevel: number = 1) => {
   const startTime = useRef<number>(0);
 
   const updateScore = useCallback((points: number) => {
-    setGameState(prev => ({ ...prev, score: prev.score + points }));
+    setGameState(prev => {
+      const newScore = prev.score + points;
+      console.log(`Score updated: ${prev.score} + ${points} = ${newScore}`);
+      return { ...prev, score: newScore };
+    });
   }, []);
 
   const loseLife = useCallback(() => {
     setGameState(prev => {
       const newLives = Math.max(0, prev.lives - 1);
+      console.log(`Life lost! Lives: ${prev.lives} -> ${newLives}, Status: ${newLives === 0 ? 'over' : prev.status}`);
       return {
         ...prev,
         lives: newLives,
@@ -37,11 +44,24 @@ export const useGameState = (initialLevel: number = 1) => {
       const newKills = prev.kills + 1;
       const levelConfig = getLevelConfig(prev.level);
       
+      console.log(`Kill added: ${newKills}/${levelConfig.killsToAdvance} for level ${prev.level}`);
+      
       if (newKills >= levelConfig.killsToAdvance) {
+        const newLevel = Math.min(prev.level + 1, 10);
+        console.log(`Level advancing from ${prev.level} to ${newLevel}`);
+        
+        // Save unlocked level immediately when level advances
+        if (newLevel > prev.level) {
+          console.log(`Saving unlocked level: ${newLevel}`);
+          import('../utils/storage').then(({ saveUnlockedLevel }) => {
+            saveUnlockedLevel(newLevel);
+          });
+        }
+        
         return {
           ...prev,
           kills: 0,
-          level: Math.min(prev.level + 1, 10),
+          level: newLevel,
         };
       }
       
@@ -58,6 +78,8 @@ export const useGameState = (initialLevel: number = 1) => {
       lives: 3,
       kills: 0,
       timeElapsed: 0,
+      lastEnemySpawnTime: 0,
+      lastBulletTime: 0,
     }));
   }, []);
 
@@ -81,6 +103,8 @@ export const useGameState = (initialLevel: number = 1) => {
       status: 'idle',
       kills: 0,
       timeElapsed: 0,
+      lastEnemySpawnTime: 0,
+      lastBulletTime: 0,
     });
     lastBulletTime.current = 0;
     lastEnemySpawnTime.current = 0;

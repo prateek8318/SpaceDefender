@@ -27,8 +27,7 @@ export const CollisionSystem = (entities: Entity[], { dispatch }: SystemArgs, ga
         enemy.hp--;
         
         if (enemy.hp <= 0) {
-          gameState.score += enemy.points;
-          gameState.kills++;
+          dispatch({ type: 'enemy-killed', points: enemy.points });
           
           const explosionParticles = createExplosionParticles(
             enemy.x + enemy.width / 2,

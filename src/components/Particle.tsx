@@ -3,12 +3,8 @@ import React from 'react';
 import { View, Animated, StyleSheet } from 'react-native';
 import { ParticleEntity } from '../types/game.types';
 
-interface ParticleProps {
-  particle: ParticleEntity;
-}
-
-export const Particle: React.FC<ParticleProps> = ({ particle }) => {
-  const opacity = new Animated.Value(particle.life);
+export const Particle: React.FC<ParticleEntity> = (entity) => {
+  const opacity = new Animated.Value(entity.life);
   
   React.useEffect(() => {
     Animated.timing(opacity, {
@@ -23,9 +19,9 @@ export const Particle: React.FC<ParticleProps> = ({ particle }) => {
       style={[
         styles.container,
         {
-          left: particle.x,
-          top: particle.y,
-          backgroundColor: particle.color,
+          left: entity.x,
+          top: entity.y,
+          backgroundColor: entity.color,
           opacity,
         },
       ]}

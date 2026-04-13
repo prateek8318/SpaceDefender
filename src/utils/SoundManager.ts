@@ -24,15 +24,7 @@ const noopSound: DummySound = {
   release: () => {},
 };
 
-let Sound: SoundLibrary | null = null;
-try {
-  Sound = require('react-native-sound').default;
-  if (Sound) {
-    Sound.setCategory('Playback');
-  }
-} catch {
-  Sound = null;
-}
+let Sound: any = null;
 
 const SOUND_CANDIDATES: Record<SoundKey, string[]> = {
   spaceTheme: Platform.OS === 'android' ? ['space_theme'] : ['space theme.mp3', 'space_theme.mp3'],

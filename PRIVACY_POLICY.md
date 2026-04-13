@@ -43,7 +43,7 @@ We may update this Privacy Policy from time to time. Any changes will be posted 
 
 If you have questions about this Privacy Policy, please contact us at:
 - App Name: SpaceDefender
-- Package Name: com.spacedefendernew
+- Package Name: com.spacedefender.newgame
 
 ---
 

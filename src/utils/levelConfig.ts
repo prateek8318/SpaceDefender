@@ -7,6 +7,7 @@ export interface Level {
   doubleShot: boolean;
   tripleShot: boolean;
   bossEvery5: boolean;
+  availableMovements: ('linear' | 'zigzag' | 'dive' | 'spiral')[];
 }
 
 export const LEVELS: Level[] = Array.from({ length: 500 }, (_, index) => {
@@ -22,6 +23,11 @@ export const LEVELS: Level[] = Array.from({ length: 500 }, (_, index) => {
   const doubleShot = levelId >= 3;
   const tripleShot = levelId >= 6;
 
+  const availableMovements: ('linear' | 'zigzag' | 'dive' | 'spiral')[] = ['linear'];
+  if (levelId >= 3) availableMovements.push('zigzag');
+  if (levelId >= 10) availableMovements.push('dive');
+  if (levelId >= 15) availableMovements.push('spiral');
+
   return {
     id: levelId,
     enemyInterval: baseInterval,
@@ -30,6 +36,7 @@ export const LEVELS: Level[] = Array.from({ length: 500 }, (_, index) => {
     doubleShot: doubleShot,
     tripleShot: tripleShot,
     bossEvery5: isBossLevel,
+    availableMovements,
   };
 });
 

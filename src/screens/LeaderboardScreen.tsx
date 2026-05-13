@@ -5,24 +5,28 @@ import { useNavigation } from '@react-navigation/native';
 import { COLORS } from '../utils/colors';
 import { wp, hp } from '../utils/responsive';
 import { firebaseManager } from '../utils/FirebaseManager';
+import { RefreshControl } from 'react-native';
 
 export const LeaderboardScreen: React.FC = () => {
   const navigation = useNavigation();
   const [scores, setScores] = useState<any[]>([]);
+  const [myScore, setMyScore] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadScores = async () => {
       try {
         setLoading(true);
-        const globalScores = await firebaseManager.getLeaderboard();
-        if (globalScores) {
-          const scoresArray = globalScores
-            .filter((item: any) => item && typeof item.level === 'number')
-            .sort((a: any, b: any) => b.level - a.level);
-          setScores(scoresArray);
+        const globalScores = await firebaseManager.getLeaderboard(50);
+        setScores(globalScores || []);
+        
+        // Fetch current user's entry specifically
+        const userEntry = globalScores.find(s => s.isMe);
+        if (userEntry) {
+          setMyScore(userEntry);
         } else {
-          setScores([]);
+          const personal = await firebaseManager.getUserLeaderboardEntry();
+          setMyScore(personal);
         }
       } catch (error) {
         console.warn('Error loading global scores:', error);
@@ -33,6 +37,25 @@ export const LeaderboardScreen: React.FC = () => {
     };
 
     loadScores();
+  }, []);
+
+  const onRefresh = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const globalScores = await firebaseManager.getLeaderboard(50);
+      setScores(globalScores || []);
+      const userEntry = globalScores.find(s => s.isMe);
+      if (userEntry) {
+        setMyScore(userEntry);
+      } else {
+        const personal = await firebaseManager.getUserLeaderboardEntry();
+        setMyScore(personal);
+      }
+    } catch (error) {
+      console.warn('Error refreshing scores:', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const getRankColor = (rank: number) => {
@@ -78,10 +101,15 @@ export const LeaderboardScreen: React.FC = () => {
         </View>
         
         <View style={styles.scoreInfo}>
-          <Text style={[styles.scoreText, item.isMe && styles.myScoreText]}>
+          <Text style={[styles.nameText, item.isMe && styles.myNameText]}>
             {item.name || 'Anonymous'} {item.isMe ? '(YOU)' : ''}
           </Text>
-          <Text style={styles.levelText}>REACHED LEVEL {item.level}</Text>
+          <Text style={styles.levelText}>MAX MISSION {item.level || 1}</Text>
+        </View>
+
+        <View style={styles.scoreValueContainer}>
+          <Text style={styles.scoreValueText}>{(item.score || 0).toLocaleString()}</Text>
+          <Text style={styles.pointsLabel}>PTS</Text>
         </View>
       </View>
     );
@@ -118,17 +146,31 @@ export const LeaderboardScreen: React.FC = () => {
           <FlatList
             data={scores}
             renderItem={renderScoreItem}
-            keyExtractor={(item, index) => `${item.name}-${index}`}
+            keyExtractor={(item, index) => `${item.id || index}`}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={loading}
+                onRefresh={onRefresh}
+                tintColor={COLORS.primary}
+                colors={[COLORS.primary]}
+              />
+            }
           />
           
           {/* User's own rank sticky footer */}
           <View style={styles.userRankFooter}>
-            <Text style={styles.userRankTitle}>YOUR GLOBAL POSITION</Text>
+            <Text style={styles.userRankTitle}>YOUR HIGHEST RECOGNITION</Text>
             <View style={styles.userRankContent}>
-              <Text style={styles.userRankLevel}>LEVEL {scores.find(s => s.isMe)?.level || '?'}</Text>
-              <Text style={styles.userRankStatus}>RANKING UPDATES LIVE ⚡</Text>
+              <View>
+                <Text style={styles.userRankScore}>{(myScore?.score || 0).toLocaleString()}</Text>
+                <Text style={styles.userRankSub}>{myScore ? `MISSION ${myScore.level || 1} REACHED` : 'NO RECORD YET'}</Text>
+              </View>
+              <View style={styles.liveIndicator}>
+                <View style={styles.liveDot} />
+                <Text style={styles.userRankStatus}>LIVE UPDATES</Text>
+              </View>
             </View>
           </View>
         </View>
@@ -206,30 +248,33 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'flex-start',
   },
-  scoreText: {
-    color: COLORS.accent,
-    fontSize: wp(5),
-    fontWeight: 'bold',
+  nameText: {
+    color: '#fff',
+    fontSize: wp(4.2),
+    fontWeight: '700',
   },
-  myScoreItem: {
-    borderColor: COLORS.primary,
-    backgroundColor: 'rgba(78, 205, 196, 0.15)',
-    borderWidth: 2,
-  },
-  myScoreText: {
+  myNameText: {
     color: COLORS.primary,
   },
   levelText: {
-    color: COLORS.muted,
-    fontSize: wp(3),
-    marginTop: hp(0.5),
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: wp(2.8),
+    marginTop: hp(0.3),
+    fontWeight: 'bold',
   },
-  dateContainer: {
+  scoreValueContainer: {
     alignItems: 'flex-end',
   },
-  dateText: {
-    color: COLORS.text,
-    fontSize: wp(3),
+  scoreValueText: {
+    color: COLORS.accent,
+    fontSize: wp(5.5),
+    fontWeight: '900',
+    fontFamily: 'monospace',
+  },
+  pointsLabel: {
+    color: 'rgba(241, 196, 15, 0.5)',
+    fontSize: wp(2.2),
+    fontWeight: 'bold',
   },
   emptyState: {
     flex: 1,
@@ -272,14 +317,36 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
-  userRankLevel: {
-    color: COLORS.primary,
-    fontSize: wp(6),
+  userRankScore: {
+    color: COLORS.accent,
+    fontSize: wp(7),
     fontWeight: '900',
   },
+  userRankSub: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: wp(2.5),
+    fontWeight: 'bold',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(46, 204, 113, 0.1)',
+    paddingHorizontal: wp(3),
+    paddingVertical: hp(0.5),
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(46, 204, 113, 0.3)',
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#2ecc71',
+    marginRight: 6,
+  },
   userRankStatus: {
-    color: COLORS.accent,
-    fontSize: wp(3),
-    fontWeight: '700',
+    color: '#2ecc71',
+    fontSize: wp(2.5),
+    fontWeight: '900',
   },
 });

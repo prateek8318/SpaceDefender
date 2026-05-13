@@ -29,15 +29,26 @@ export const Enemy: React.FC<EnemyEntity> = memo((entity) => {
         <View style={styles.leftEye} />
         <View style={styles.rightEye} />
         
+        {/* Shield Overlay */}
+        {entity.shield ? entity.shield > 0 && (
+          <View style={[styles.shieldRing, { borderColor: '#3498db' }]} />
+        ) : null}
+
+        {/* Frozen Overlay */}
+        {entity.frozen ? entity.frozen > 0 && (
+          <View style={styles.frozenOverlay} />
+        ) : null}
+
         {/* Engine Glow */}
         <View style={[styles.engine, { backgroundColor: style.glow }]} />
       </View>
       
-      {entity.hp > 1 && (
-        <View style={styles.hpBadge}>
-          <Text style={styles.hpText}>{entity.hp}</Text>
-        </View>
-      )}
+      <View style={styles.hpBadge}>
+        {entity.shield ? entity.shield > 0 && (
+          <Text style={[styles.hpText, { color: '#3498db', marginRight: 4 }]}>S:{Math.ceil(entity.shield)}</Text>
+        ) : null}
+        <Text style={styles.hpText}>HP:{Math.ceil(entity.hp)}</Text>
+      </View>
     </View>
   );
 });
@@ -135,12 +146,27 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     opacity: 0.8,
   },
+  shieldRing: {
+    position: 'absolute',
+    width: '130%',
+    height: '130%',
+    borderRadius: 999,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    opacity: 0.8,
+  },
+  frozenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 210, 255, 0.3)',
+    borderRadius: 8,
+  },
   hpBadge: {
     position: 'absolute',
     bottom: -15,
     backgroundColor: 'rgba(0,0,0,0.8)',
     paddingHorizontal: 6,
     borderRadius: 4,
+    flexDirection: 'row',
   },
   hpText: {
     color: '#fff',

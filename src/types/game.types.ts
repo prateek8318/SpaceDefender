@@ -12,6 +12,63 @@ export interface Entity {
 
 export type SkinType = 'scout' | 'vanguard' | 'phoenix' | 'phantom' | 'omega';
 
+export type PowerUpType = 
+  | 'rapidFire' 
+  | 'multiShot' 
+  | 'timeSlow' 
+  | 'shieldRecharge' 
+  | 'shieldRefill' 
+  | 'bombRefill';
+
+export type PerkType = 
+  | 'pierce' 
+  | 'autoShield' 
+  | 'doubleCoins' 
+  | 'luckyDrop' 
+  | 'autoBomb' 
+  | 'speed' 
+  | 'alwaysMulti' 
+  | 'freeze' 
+  | 'scoreX2' 
+  | 'extraLife' 
+  | 'largeBullets' 
+  | 'alwaysRapid';
+
+export type WeaponType = 'standard' | 'laser' | 'shotgun' | 'sniper';
+
+export interface Weapon {
+  id: WeaponType;
+  name: string;
+  description: string;
+  icon: string;
+  damageMult: number;
+  fireRateMult: number;
+}
+
+export interface Perk {
+  id: PerkType;
+  name: string;
+  description: string;
+  icon: string;
+}
+
+export type MovementType = 'linear' | 'zigzag' | 'dive' | 'spiral';
+
+export interface PowerUpModel {
+  id: string;
+  type: PowerUpType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+  drift: number;
+  phase: number;
+  movementType?: MovementType;
+  targetX?: number;
+  startTime?: number;
+}
+
 export interface PlayerEntity extends Entity {
   speed: number;
   lives: number;
@@ -21,6 +78,9 @@ export interface PlayerEntity extends Entity {
 export interface EnemyEntity extends Entity {
   hp: number;
   maxHp: number;
+  shield?: number;
+  maxShield?: number;
+  frozen?: number;
   speed: number;
   type: 'basic' | 'fast' | 'tank' | 'boss';
   points: number;
@@ -51,6 +111,12 @@ export interface GameState {
   lastBulletTime: number;
   shieldActive: boolean;
   lifelineUsed: boolean;
+  combo: number;
+  multiplier: number;
+  activePowerUp: PowerUpType | null;
+  powerUpTime: number; // in milliseconds
+  activePerk: PerkType | null;
+  activeWeapon: WeaponType;
 }
 
 export interface GameEngineProps {

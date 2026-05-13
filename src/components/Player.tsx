@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SkinType } from '../types/game.types';
+import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withRepeat } from 'react-native-reanimated';
 
 interface PlayerProps {
   x: number;
@@ -9,9 +10,26 @@ interface PlayerProps {
   height: number;
   shieldActive?: boolean;
   skin?: SkinType;
+  hitKey?: number;
 }
 
-export const Player: React.FC<PlayerProps> = memo(({ x, y, width, height, shieldActive, skin = 'scout' }) => {
+export const Player: React.FC<PlayerProps> = memo(({ x, y, width, height, shieldActive, skin = 'scout', hitKey = 0 }) => {
+  const hitAnim = useSharedValue(0);
+
+  React.useEffect(() => {
+    if (hitKey > 0) {
+      hitAnim.value = withSequence(
+        withRepeat(withTiming(1, { duration: 100 }), 3, true),
+        withTiming(0, { duration: 50 })
+      );
+    }
+  }, [hitKey, hitAnim]);
+
+  const hitEffectStyle = useAnimatedStyle(() => ({
+    backgroundColor: hitAnim.value > 0.5 ? '#ff4757' : 'transparent',
+    opacity: hitAnim.value,
+  }));
+
   const getSkinColors = () => {
     switch (skin) {
       case 'vanguard': return { primary: '#3498db', secondary: '#2980b9', glow: '#43D7FF' };
@@ -32,6 +50,9 @@ export const Player: React.FC<PlayerProps> = memo(({ x, y, width, height, shield
       
       {/* Ship Body */}
       <View style={[styles.shipBody, { backgroundColor: colors.primary }]}>
+        {/* Hit Flash Overlay */}
+        <Animated.View style={[StyleSheet.absoluteFill, styles.hitFlash, hitEffectStyle]} />
+        
         {/* Cockpit */}
         <View style={styles.cockpit} />
         
@@ -64,6 +85,10 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 5,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  hitFlash: {
+    zIndex: 10,
   },
   cockpit: {
     position: 'absolute',

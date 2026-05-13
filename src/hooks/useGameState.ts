@@ -1,6 +1,6 @@
 // === FILE: src/hooks/useGameState.ts ===
 import { useCallback, useRef, useState } from 'react';
-import { GameState } from '../types/game.types';
+import { GameState, PerkType, WeaponType, PowerUpType } from '../types/game.types';
 import { getLevelConfig } from '../utils/levelConfig';
 
 export const useGameState = (initialLevel: number = 1) => {
@@ -15,6 +15,12 @@ export const useGameState = (initialLevel: number = 1) => {
     lastBulletTime: 0,
     shieldActive: false,
     lifelineUsed: false,
+    combo: 0,
+    multiplier: 1,
+    activePowerUp: null,
+    powerUpTime: 0,
+    activePerk: null,
+    activeWeapon: 'standard',
   });
 
   const lastBulletTime = useRef<number>(0);
@@ -22,7 +28,7 @@ export const useGameState = (initialLevel: number = 1) => {
   const startTime = useRef<number>(0);
 
   const updateScore = useCallback((points: number) => {
-    setGameState(prev => ({ ...prev, score: prev.score + points }));
+    setGameState(prev => ({ ...prev, score: prev.score + points * prev.multiplier }));
   }, []);
 
   const loseLife = useCallback(() => {
@@ -32,6 +38,8 @@ export const useGameState = (initialLevel: number = 1) => {
       return {
         ...prev,
         lives: newLives,
+        combo: 0,
+        multiplier: 1,
         status: newLives === 0 ? 'over' : prev.status,
       };
     });
@@ -52,13 +60,18 @@ export const useGameState = (initialLevel: number = 1) => {
         
         return {
           ...prev,
-          kills: 0,
-          level: newLevel,
-          lifelineUsed: false, // Reset lifeline for new level
+          status: 'cleared',
+          lifelineUsed: false,
         };
       }
       
-      return { ...prev, kills: newKills };
+      const newCombo = prev.combo + 1;
+      let newMultiplier = 1;
+      if (newCombo >= 30) newMultiplier = 8;
+      else if (newCombo >= 15) newMultiplier = 4;
+      else if (newCombo >= 5) newMultiplier = 2;
+
+      return { ...prev, kills: newKills, combo: newCombo, multiplier: newMultiplier };
     });
   }, []);
 
@@ -75,7 +88,29 @@ export const useGameState = (initialLevel: number = 1) => {
       lastBulletTime: 0,
       shieldActive: false,
       lifelineUsed: false,
+      combo: 0,
+      multiplier: 1,
+      activePowerUp: null,
+      powerUpTime: 0,
     }));
+  }, []);
+
+  const setPerk = useCallback((perk: PerkType) => {
+    setGameState(prev => {
+      let extraLives = 0;
+      if (perk === 'extraLife') extraLives = 1;
+      if (perk === 'doubleCoins') return { ...prev, activePerk: perk, lives: 1 };
+      
+      return { 
+        ...prev, 
+        activePerk: perk,
+        lives: Math.min(5, prev.lives + extraLives)
+      };
+    });
+  }, []);
+
+  const setWeapon = useCallback((weapon: WeaponType) => {
+    setGameState(prev => ({ ...prev, activeWeapon: weapon }));
   }, []);
 
   const pauseGame = useCallback(() => {
@@ -102,6 +137,12 @@ export const useGameState = (initialLevel: number = 1) => {
       lastBulletTime: 0,
       shieldActive: false,
       lifelineUsed: false,
+      combo: 0,
+      multiplier: 1,
+      activePowerUp: null,
+      powerUpTime: 0,
+      activeWeapon: 'standard',
+      activePerk: null,
     });
     lastBulletTime.current = 0;
     lastEnemySpawnTime.current = 0;
@@ -111,9 +152,12 @@ export const useGameState = (initialLevel: number = 1) => {
   const updateTime = useCallback(() => {
     setGameState(prev => {
       if (prev.status === 'playing' && startTime.current > 0) {
+        const nextPowerUpTime = Math.max(0, prev.powerUpTime - (Date.now() - (startTime.current + prev.timeElapsed)));
         return {
           ...prev,
           timeElapsed: Date.now() - startTime.current,
+          powerUpTime: nextPowerUpTime,
+          activePowerUp: nextPowerUpTime <= 0 ? null : prev.activePowerUp,
         };
       }
       return prev;
@@ -141,12 +185,53 @@ export const useGameState = (initialLevel: number = 1) => {
     });
   }, []);
 
+  const nextLevel = useCallback(() => {
+    setGameState(prev => ({
+      ...prev,
+      level: Math.min(prev.level + 1, 500),
+      status: 'playing',
+      kills: 0,
+    }));
+  }, []);
+
   const revive = useCallback(() => {
     setGameState(prev => ({
       ...prev,
       lives: 1,
       status: 'playing',
     }));
+  }, []);
+
+  const activatePowerUp = useCallback((type: PowerUpType) => {
+    setGameState(prev => {
+      if (type === 'shieldRecharge') {
+        return {
+          ...prev,
+          lives: Math.min(3, prev.lives + 1),
+        };
+      }
+
+      let duration = 0;
+      switch (type) {
+        case 'rapidFire': duration = 8000; break;
+        case 'multiShot': duration = 10000; break;
+        case 'timeSlow': duration = 6000; break;
+        case 'shieldRefill': 
+        case 'bombRefill':
+          duration = 0;
+          break;
+      }
+
+      if (duration === 0 && type !== 'shieldRecharge') {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        activePowerUp: type,
+        powerUpTime: duration,
+      };
+    });
   }, []);
 
   return {
@@ -165,6 +250,10 @@ export const useGameState = (initialLevel: number = 1) => {
     reset,
     updateTime,
     activateShield,
+    activatePowerUp,
     revive,
+    nextLevel,
+    setPerk,
+    setWeapon,
   };
 };

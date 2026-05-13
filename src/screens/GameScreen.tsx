@@ -1,24 +1,44 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSequence, withTiming, withRepeat } from 'react-native-reanimated';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { GameOverModal } from '../components/GameOverModal';
 import { HUD } from '../components/HUD';
 import { Player } from '../components/Player';
 import { SkinType } from '../types/game.types';
-import { getSelectedSkin } from '../utils/storage';
 import { Enemy } from '../components/Enemy';
 import { Bullet } from '../components/Bullet';
 import { BackgroundStars } from '../components/BackgroundStars';
 import { useGameState } from '../hooks/useGameState';
-import { saveScore, saveUnlockedLevel } from '../utils/storage';
+import { Particle } from '../components/Particle';
+import { ComboMultiplierPop } from '../components/ComboMultiplierPop';
+import { PowerUp } from '../components/PowerUp';
+import { PowerUpModel, PowerUpType, PerkType, WeaponType } from '../types/game.types';
+import { 
+  saveScore, 
+  saveUnlockedLevel, 
+  getUpgrades, 
+  Upgrades, 
+  addCoins, 
+  getBestScore, 
+  getSelectedSkin, 
+  getGyroEnabled,
+  getSelectedWeapon,
+  saveSelectedWeapon,
+  getCoins,
+  saveStars
+} from '../utils/storage';
+import { LevelCompleteModal } from '../components/LevelCompleteModal';
+import { PerkSelectionModal } from '../components/PerkSelectionModal';
+import { WeaponSelectionModal } from '../components/WeaponSelectionModal';
 import { COLORS } from '../utils/colors';
 import { hp, screenHeightPx, screenWidthPx, wp } from '../utils/responsive';
 import { getLevelConfig } from '../utils/levelConfig';
 import { soundManager } from '../utils/SoundManager';
 import { adManager } from '../utils/AdManager';
-import { getGyroEnabled } from '../utils/storage';
 import { useGyroscope } from '../hooks/useGyroscope';
+import { firebaseManager } from '../utils/FirebaseManager';
 
 interface RouteParams {
   levelId: number;
@@ -35,10 +55,15 @@ interface EnemyModel {
   height: number;
   hp: number;
   maxHp: number;
+  shield?: number;
+  maxShield?: number;
   speed: number;
   points: number;
   drift: number;
   phase: number;
+  movementType?: 'linear' | 'zigzag' | 'dive' | 'spiral' | 'formation';
+  startTime?: number;
+  frozen?: number;
 }
 
 interface BulletModel {
@@ -51,6 +76,9 @@ interface BulletModel {
   vx: number;
   vy: number;
   hostile: boolean;
+  isHoming?: boolean;
+  targetX?: number;
+  targetY?: number;
 }
 
 const PLAYER_WIDTH = 60;
@@ -91,7 +119,7 @@ const makeId = (prefix: string) => {
 export const GameScreen: React.FC = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { levelId } = (route.params as RouteParams) || { levelId: 1 };
+  const { levelId } = (route.params as any) || { levelId: 1 };
 
   const {
     gameState,
@@ -104,26 +132,144 @@ export const GameScreen: React.FC = () => {
     addKill,
     loseLife,
     activateShield,
+    activatePowerUp,
     revive,
+    nextLevel,
+    setPerk,
+    setWeapon,
   } = useGameState(levelId);
+
+  const [levelStats, setLevelStats] = useState({ bestCombo: 0, kills: 0 });
+  const [isPersonalBest, setIsPersonalBest] = useState(false);
+  const [showWinModal, setShowWinModal] = useState(false);
+  const [showPerkModal, setShowPerkModal] = useState(false);
+  const [showWeaponModal, setShowWeaponModal] = useState(false);
+  const [activeUpgrades, setActiveUpgrades] = useState<Upgrades | null>(null);
+  const [bombsRemaining, setBombsRemaining] = useState(1);
+  const [coins, setCoins] = useState(0);
+  const [gameStarted, setGameStarted] = useState(false);
+  const levelClearHandledRef = useRef(false);
+  
+  const perkAutoShieldRef = useRef(0);
+  const perkAutoBombRef = useRef(0);
+
+  useEffect(() => {
+    if (gameState.combo > levelStats.bestCombo) {
+      setLevelStats(prev => ({ ...prev, bestCombo: gameState.combo }));
+    }
+  }, [gameState.combo]);
+
+  useEffect(() => {
+    if (gameState.status === 'cleared' && !levelClearHandledRef.current) {
+      levelClearHandledRef.current = true;
+      const finalScore = gameState.score;
+      const earnedStars = gameState.lives >= 3 ? 3 : gameState.lives >= 2 ? 2 : 1;
+      
+      const checkPB = async () => {
+        const best = await getBestScore();
+        if (finalScore > best) setIsPersonalBest(true);
+        // Save stars for the level
+        await saveStars(gameState.level, earnedStars);
+      };
+      checkPB();
+      
+      soundManager.stopBackgroundMusic();
+      setShowWinModal(true);
+    }
+  }, [gameState.status]);
 
   const [showPauseModal, setShowPauseModal] = useState(false);
   const [shieldCooldown, setShieldCooldown] = useState(0);
   const [bombCooldown, setBombCooldown] = useState(0);
   const [isShieldActive, setIsShieldActive] = useState(false);
   const [gyroEnabled, setGyroEnabled] = useState(false);
+  const [hitKey, setHitKey] = useState(0);
 
-  useEffect(() => {
-    if (shieldCooldown > 0) setShieldCooldown(prev => prev - 1);
-    if (bombCooldown > 0) setBombCooldown(prev => prev - 1);
-  }, [/* dependency to trigger every tick, typically gameState update */]);
+  const PARTICLE_POOL_SIZE = 120;
+  const particlePool = useRef(
+    Array.from({ length: PARTICLE_POOL_SIZE }).map((_, i) => ({
+      id: `p-${i}`,
+      x: useSharedValue(-100),
+      y: useSharedValue(-100),
+      opacity: useSharedValue(0),
+      scale: useSharedValue(1),
+      active: false,
+      color: '#fff',
+      size: 4,
+    }))
+  ).current;
+
+  const [activeParticles, setActiveParticles] = useState<number[]>([]);
+  const nextParticleIdx = useRef(0);
+
+  const triggerExplosion = useCallback((x: number, y: number, type: EnemyKind) => {
+    const count = type === 'boss' ? 35 : type === 'tank' ? 12 : 8;
+    const color = type === 'fast' ? '#f1c40f' : type === 'tank' ? '#e67e22' : type === 'boss' ? '#e74c3c' : '#bdc3c7';
+    const duration = type === 'boss' ? 800 : 400;
+    const size = type === 'boss' ? 6 : 4;
+
+    for (let i = 0; i < count; i++) {
+      const pIdx = nextParticleIdx.current;
+      const p = particlePool[pIdx];
+      
+      p.color = color;
+      p.size = size;
+      p.x.value = x;
+      p.y.value = y;
+      p.opacity.value = 1;
+      p.scale.value = 1;
+
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * (type === 'boss' ? 120 : 60);
+      const targetX = x + Math.cos(angle) * distance;
+      const targetY = y + Math.sin(angle) * distance;
+
+      p.x.value = withTiming(targetX, { duration });
+      p.y.value = withTiming(targetY, { duration });
+      p.opacity.value = withTiming(0, { duration });
+      p.scale.value = withTiming(0.2, { duration });
+
+      nextParticleIdx.current = (nextParticleIdx.current + 1) % PARTICLE_POOL_SIZE;
+    }
+
+    if (type === 'boss') {
+      triggerShake(15, 600);
+    }
+  }, [particlePool]);
+
+  const shakeAnim = useSharedValue(0);
+
+  const triggerShake = useCallback((intensity: number = 10, duration: number = 300) => {
+    shakeAnim.value = withSequence(
+      withRepeat(
+        withTiming(intensity, { duration: duration / 10 }),
+        10,
+        true
+      ),
+      withTiming(0, { duration: 50 })
+    );
+  }, [shakeAnim]);
+
+  const animatedShakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeAnim.value }],
+  }));
 
   const handleBomb = () => {
-    if (bombCooldown > 0) return;
-    
+    if (bombCooldown > 0 || bombsRemaining <= 0) return;
+
     soundManager.playBombSound();
+    triggerShake(25, 500);
     setEnemies([]);
-    setBombCooldown(1800); // 30 seconds cooldown (60fps * 30)
+    setBombsRemaining(prev => prev - 1);
+    setBombCooldown(300);
+  };
+
+  const handleShield = () => {
+    if (shieldCooldown > 0) return;
+    const extraDuration = activeUpgrades ? activeUpgrades.shieldDuration * 2000 : 0;
+    activateShield(5000 + extraDuration);
+    setIsShieldActive(true);
+    setShieldCooldown(1200);
   };
   const [currentSkin, setCurrentSkin] = useState<SkinType>('scout');
   const [showGameOverModal, setShowGameOverModal] = useState(false);
@@ -135,21 +281,37 @@ export const GameScreen: React.FC = () => {
       
       const gyro = await getGyroEnabled();
       setGyroEnabled(gyro);
+
+      const upg = await getUpgrades();
+      setActiveUpgrades(upg);
+      setBombsRemaining(1 + (upg.bombCount || 0));
+
+      const weapon = await getSelectedWeapon();
+      setWeapon(weapon as WeaponType);
+
+      const c = await getCoins();
+      setCoins(c);
     };
     loadSettings();
   }, []);
-  const [gameStarted, setGameStarted] = useState(false);
+
   const [playerX, setPlayerX] = useState(screenWidthPx / 2 - PLAYER_WIDTH / 2);
   const { playerX: gyroX, setPlayerX: setGyroX } = useGyroscope(gyroEnabled && gameStarted && gameState.status === 'playing', playerX, PLAYER_WIDTH);
 
   const [enemies, setEnemies] = useState<EnemyModel[]>([]);
   const [bullets, setBullets] = useState<BulletModel[]>([]);
+  const [powerUps, setPowerUps] = useState<PowerUpModel[]>([]);
 
   useEffect(() => {
     if (gyroEnabled) {
       setPlayerX(gyroX);
     }
   }, [gyroX, gyroEnabled]);
+
+  useEffect(() => {
+    reset();
+    setGameStarted(false);
+  }, [levelId, reset]);
 
   const playerXRef = useRef(playerX);
   const gestureStartXRef = useRef(playerX);
@@ -166,6 +328,8 @@ export const GameScreen: React.FC = () => {
   const lastFrameTimeRef = useRef(0);
   const gameOverHandledRef = useRef(false);
   const playerHitCooldownRef = useRef(0);
+  const [activeMultiplierPop, setActiveMultiplierPop] = useState<number | null>(null);
+  const lastMultiplierRef = useRef(1);
 
   useEffect(() => {
     playerXRef.current = playerX;
@@ -179,9 +343,19 @@ export const GameScreen: React.FC = () => {
     bulletsRef.current = bullets;
   }, [bullets]);
 
+  const powerUpsRef = useRef<PowerUpModel[]>([]);
+  useEffect(() => {
+    powerUpsRef.current = powerUps;
+  }, [powerUps]);
+
   useEffect(() => {
     gameStateRef.current = gameState;
     levelRef.current = gameState.level;
+
+    if (gameState.multiplier > lastMultiplierRef.current) {
+      setActiveMultiplierPop(gameState.multiplier);
+    }
+    lastMultiplierRef.current = gameState.multiplier;
   }, [gameState]);
 
   const syncEnemies = useCallback((nextEnemies: EnemyModel[]) => {
@@ -210,109 +384,141 @@ export const GameScreen: React.FC = () => {
     playerHitCooldownRef.current = 0;
   }, []);
 
-  const createEnemy = useCallback((currentLevel: number): EnemyModel => {
+  const spawnPowerUp = useCallback((x: number, y: number) => {
+    if (Math.random() > 0.15) return;
+
+    const types: PowerUpType[] = ['rapidFire', 'multiShot', 'timeSlow', 'shieldRecharge'];
+    const type = types[Math.floor(Math.random() * types.length)];
+
+    const newPowerUp: PowerUpModel = {
+      id: makeId('pwr'),
+      type,
+      x,
+      y,
+      width: 32,
+      height: 32,
+      speed: 180,
+    };
+
+    setPowerUps(prev => [...prev, newPowerUp]);
+  }, []);
+
+  const createEnemy = useCallback((currentLevel: number, forceType?: EnemyKind, overridePos?: { x: number, y: number }, movement?: any): EnemyModel => {
     const config = getLevelConfig(currentLevel);
     const isBossLevel = config.bossEvery5;
     const bossChance = isBossLevel ? 0.18 : 0;
     const roll = Math.random();
-    let type: EnemyKind = 'basic';
+    let type: EnemyKind = forceType || 'basic';
 
-    if (roll < bossChance) {
-      type = 'boss';
-    } else if (roll < 0.2 + currentLevel * 0.005) {
-      type = 'tank';
-    } else if (roll < 0.5) {
-      type = 'fast';
+    if (!forceType) {
+      if (roll < bossChance) {
+        type = 'boss';
+      } else if (roll < 0.2 + currentLevel * 0.005) {
+        type = 'tank';
+      } else if (roll < 0.5) {
+        type = 'fast';
+      }
     }
 
     const size = ENEMY_SIZES[type];
     const hpScale = Math.floor((currentLevel - 1) / 3);
     const speedScale = config.enemySpeed;
+    const chosenMovement = movement || (type === 'boss' ? 'linear' : config.availableMovements[Math.floor(Math.random() * config.availableMovements.length)]);
+
+    const baseEnemy = {
+      id: makeId(`enemy-${type}`),
+      type,
+      x: overridePos ? overridePos.x : Math.random() * Math.max(1, screenWidthPx - size.width),
+      y: overridePos ? overridePos.y : -size.height,
+      width: size.width,
+      height: size.height,
+      movementType: chosenMovement,
+      startTime: Date.now(),
+      frozen: 0,
+    };
 
     if (type === 'boss') {
+      triggerShake(30, 800);
+      const bossHp = 25 + currentLevel * 10;
+      const bossShield = 20 + currentLevel * 2;
       return {
-        id: makeId('enemy-boss'),
-        type,
-        x: Math.random() * Math.max(1, screenWidthPx - size.width),
-        y: -size.height,
-        width: size.width,
-        height: size.height,
-        hp: 6 + Math.floor(currentLevel / 2),
-        maxHp: 6 + Math.floor(currentLevel / 2),
-        speed: (110 + speedScale * 24) * ENEMY_SPEED_MULTIPLIER,
-        points: 60 + currentLevel * 5,
-        drift: 42 + currentLevel * 1.5,
-        phase: Math.random() * Math.PI * 2,
+        ...baseEnemy,
+        hp: bossHp,
+        maxHp: bossHp,
+        shield: bossShield,
+        maxShield: bossShield,
+        speed: (90 + speedScale * 18) * ENEMY_SPEED_MULTIPLIER,
+        points: 150 + currentLevel * 20,
+        drift: 0,
+        phase: 0,
       };
     }
 
     if (type === 'tank') {
+      const tankHp = 6 + currentLevel * 1.5;
+      const tankShield = 4 + currentLevel * 0.5;
       return {
-        id: makeId('enemy-tank'),
-        type,
-        x: Math.random() * Math.max(1, screenWidthPx - size.width),
-        y: -size.height,
-        width: size.width,
-        height: size.height,
-        hp: 2 + hpScale,
-        maxHp: 2 + hpScale,
-        speed: (135 + speedScale * 30) * ENEMY_SPEED_MULTIPLIER,
-        points: 20 + currentLevel * 2,
-        drift: 18 + currentLevel * 0.7,
-        phase: Math.random() * Math.PI * 2,
+        ...baseEnemy,
+        hp: tankHp,
+        maxHp: tankHp,
+        shield: tankShield,
+        maxShield: tankShield,
+        speed: (110 + speedScale * 22) * ENEMY_SPEED_MULTIPLIER,
+        points: 35 + currentLevel * 2,
+        drift: 10,
+        phase: Math.random() * Math.PI,
       };
     }
 
     if (type === 'fast') {
       return {
-        id: makeId('enemy-fast'),
-        type,
-        x: Math.random() * Math.max(1, screenWidthPx - size.width),
-        y: -size.height,
-        width: size.width,
-        height: size.height,
+        ...baseEnemy,
         hp: 1,
         maxHp: 1,
-        speed: (185 + speedScale * 38) * ENEMY_SPEED_MULTIPLIER,
-        points: 14 + currentLevel,
-        drift: 30 + currentLevel,
+        speed: (220 + speedScale * 45) * ENEMY_SPEED_MULTIPLIER,
+        points: 18 + currentLevel,
+        drift: 35 + currentLevel,
         phase: Math.random() * Math.PI * 2,
       };
     }
 
+    const basicHp = 1 + Math.floor(currentLevel * 0.4);
     return {
-      id: makeId('enemy-basic'),
-      type,
-      x: Math.random() * Math.max(1, screenWidthPx - size.width),
-      y: -size.height,
-      width: size.width,
-      height: size.height,
-      hp: 1 + Math.floor(hpScale / 2),
-      maxHp: 1 + Math.floor(hpScale / 2),
-      speed: (145 + speedScale * 28) * ENEMY_SPEED_MULTIPLIER,
-      points: 10 + currentLevel,
-      drift: 14 + currentLevel * 0.5,
+      ...baseEnemy,
+      hp: basicHp,
+      maxHp: basicHp,
+      speed: (160 + speedScale * 32) * ENEMY_SPEED_MULTIPLIER,
+      points: 12 + currentLevel,
+      drift: 16 + currentLevel * 0.5,
       phase: Math.random() * Math.PI * 2,
     };
-  }, []);
+  }, [triggerShake]);
 
   const createBullets = useCallback((currentLevel: number): BulletModel[] => {
     const config = getLevelConfig(currentLevel);
-    const bulletCount = config.tripleShot ? 3 : config.doubleShot ? 2 : 1;
-    const spread = bulletCount === 1 ? [0] : bulletCount === 2 ? [-12, 12] : [-18, 0, 18];
-    const originX = playerXRef.current + PLAYER_WIDTH / 2 - 2;
-    const bulletSpeed = (760 + currentLevel * 18) * BULLET_SPEED_MULTIPLIER;
+    const weapon = gameStateRef.current.activeWeapon;
+    const isMulti = gameStateRef.current.activePowerUp === 'multiShot' || gameStateRef.current.activePerk === 'alwaysMulti' || weapon === 'shotgun';
+    const isRapid = gameStateRef.current.activePowerUp === 'rapidFire' || gameStateRef.current.activePerk === 'alwaysRapid' || weapon === 'laser';
+    const sizeMult = gameStateRef.current.activePerk === 'largeBullets' ? 1.5 : (weapon === 'sniper' ? 1.8 : 1);
+    
+    let bulletCount = isMulti ? 3 : (config.tripleShot ? 3 : config.doubleShot ? 2 : 1);
+    if (weapon === 'shotgun') bulletCount = 5;
+
+    const spread = bulletCount === 1 ? [0] : bulletCount === 2 ? [-12, 12] : bulletCount === 3 ? [-18, 0, 18] : [-30, -15, 0, 15, 30];
+    const originX = playerXRef.current + PLAYER_WIDTH / 2 - 4 * sizeMult;
+    const bulletSpeed = (760 + currentLevel * 18) * BULLET_SPEED_MULTIPLIER * (isRapid ? 1.2 : 1) * (weapon === 'sniper' ? 2 : 1);
 
     return spread.map(offset => ({
       id: makeId('bullet'),
-      x: originX + offset,
+      x: originX,
       y: PLAYER_START_Y,
-      width: 6,
-      height: 18,
+      width: (weapon === 'laser' ? 4 : 8) * sizeMult,
+      height: (weapon === 'laser' ? 12 : 20) * sizeMult,
       speed: bulletSpeed,
-      vx: 0,
+      vx: isMulti ? offset * (weapon === 'shotgun' ? 3.5 : 2) : 0,
       vy: -bulletSpeed,
       hostile: false,
+      color: weapon === 'laser' ? '#00d2ff' : weapon === 'sniper' ? '#ff9f43' : (isMulti ? '#2ed573' : isRapid ? '#ff4757' : COLORS.primary),
     }));
   }, []);
 
@@ -322,15 +528,65 @@ export const GameScreen: React.FC = () => {
     const originY = enemy.y + enemy.height - 6;
 
     if (enemy.type === 'boss') {
-      return [-150, -60, 0, 60, 150].map(vx => ({
-        id: makeId('enemy-bullet'),
+      const hpPercent = (enemy.hp / enemy.maxHp) * 100;
+      
+      if (hpPercent <= 30) {
+        const angles = [0, 45, 90, 135, 180, 225, 270, 315];
+        return angles.map(angle => {
+          const rad = (angle * Math.PI) / 180;
+          return {
+            id: makeId('boss-burst'),
+            x: originX,
+            y: originY,
+            width: 10,
+            height: 10,
+            speed: downwardSpeed * 1.2,
+            vx: Math.cos(rad) * downwardSpeed,
+            vy: Math.sin(rad) * downwardSpeed,
+            hostile: true,
+          };
+        });
+      }
+
+      if (hpPercent <= 60) {
+        const spread = [-160, -80, 0, 80, 160].map(vx => ({
+          id: makeId('boss-bullet'),
+          x: originX,
+          y: originY,
+          width: 8,
+          height: 20,
+          speed: downwardSpeed,
+          vx,
+          vy: downwardSpeed,
+          hostile: true,
+        }));
+
+        spread.push({
+          id: makeId('boss-homing'),
+          x: originX,
+          y: originY,
+          width: 12,
+          height: 12,
+          speed: downwardSpeed * 0.8,
+          vx: 0,
+          vy: downwardSpeed * 0.5,
+          hostile: true,
+          isHoming: true,
+          targetX: playerXRef.current,
+          targetY: PLAYER_START_Y,
+        });
+        return spread;
+      }
+
+      return [-100, 0, 100].map(vx => ({
+        id: makeId('boss-bullet'),
         x: originX,
         y: originY,
         width: 8,
         height: 20,
         speed: downwardSpeed,
         vx,
-        vy: downwardSpeed + Math.abs(vx) * 0.2,
+        vy: downwardSpeed,
         hostile: true,
       }));
     }
@@ -350,6 +606,18 @@ export const GameScreen: React.FC = () => {
     ];
   }, []);
 
+  const handleStartGame = useCallback(() => {
+    setShowPerkModal(true);
+  }, []);
+
+  const handlePerkSelect = useCallback((perk: PerkType) => {
+    setShowPerkModal(false);
+    setPerk(perk);
+    setGameStarted(true);
+    startGame();
+    soundManager.playBackgroundMusic(true);
+  }, [setPerk, startGame]);
+
   const handlePause = useCallback(() => {
     pauseGame();
     setShowPauseModal(true);
@@ -361,6 +629,8 @@ export const GameScreen: React.FC = () => {
     setShowPauseModal(false);
     soundManager.playBackgroundMusic(true);
   }, [resumeGame]);
+
+
 
   const handleHome = useCallback(() => {
     clearLoop();
@@ -385,21 +655,6 @@ export const GameScreen: React.FC = () => {
     setGyroX(screenWidthPx / 2 - PLAYER_WIDTH / 2);
     playerXRef.current = screenWidthPx / 2 - PLAYER_WIDTH / 2;
   }, [clearLoop, reset, resetLoopState]);
-
-  const handleStartGame = useCallback(() => {
-    gameOverHandledRef.current = false;
-    setShowGameOverModal(false);
-    setShowPauseModal(false);
-    setGameStarted(true);
-    setEnemies([]);
-    setBullets([]);
-    enemiesRef.current = [];
-    bulletsRef.current = [];
-    resetLoopState();
-    startGame();
-    soundManager.stopEffect('explosion');
-    soundManager.playBackgroundMusic(true);
-  }, [resetLoopState, startGame]);
 
   const handlePanGesture = useCallback((event: any) => {
     const { state, translationX } = event.nativeEvent;
@@ -438,14 +693,37 @@ export const GameScreen: React.FC = () => {
         lastFrameTimeRef.current = timestamp;
       }
 
-      const deltaMs = Math.min(32, timestamp - lastFrameTimeRef.current);
+      const deltaMsRaw = Math.min(32, timestamp - lastFrameTimeRef.current);
       lastFrameTimeRef.current = timestamp;
+      
+      if (gameState.activePerk === 'autoShield') {
+        perkAutoShieldRef.current += deltaMsRaw;
+        if (perkAutoShieldRef.current >= 30000) {
+          perkAutoShieldRef.current = 0;
+          handleShield();
+        }
+      }
+      if (gameState.activePerk === 'autoBomb') {
+        perkAutoBombRef.current += deltaMsRaw;
+        if (perkAutoBombRef.current >= 45000) {
+          perkAutoBombRef.current = 0;
+          handleBomb();
+        }
+      }
+
+      const isTimeSlow = gameStateRef.current.activePowerUp === 'timeSlow';
+      const deltaMs = isTimeSlow ? deltaMsRaw * 0.6 : deltaMsRaw;
       const deltaSeconds = deltaMs / 1000;
       const currentLevel = levelRef.current;
       const levelConfig = getLevelConfig(currentLevel);
       const maxEnemies = levelConfig.bossEvery5 ? 18 : 11;
       const maxBullets = levelConfig.tripleShot ? 34 : levelConfig.doubleShot ? 28 : 24;
-      const fireDelay = levelConfig.bossEvery5 ? 120 : 90;
+      
+      const fireRateBonus = activeUpgrades ? activeUpgrades.fireRate * 0.12 : 0;
+      const weapon = gameStateRef.current.activeWeapon;
+      const isRapidFire = gameStateRef.current.activePowerUp === 'rapidFire' || gameState.activePerk === 'alwaysRapid' || weapon === 'laser';
+      const fireDelayBase = weapon === 'laser' ? 60 : weapon === 'sniper' ? 1000 : weapon === 'shotgun' ? 600 : (isRapidFire ? 50 : (levelConfig.bossEvery5 ? 120 : 90));
+      const fireDelay = fireDelayBase * (1 - fireRateBonus);
       const enemyFireDelay = levelConfig.bossEvery5 ? 650 : Math.max(900, 1500 - currentLevel * 35);
 
       spawnAccumulatorRef.current += deltaMs;
@@ -455,18 +733,39 @@ export const GameScreen: React.FC = () => {
 
       let nextEnemies = enemiesRef.current;
       let nextBullets = bulletsRef.current;
+      let nextPowerUps = powerUpsRef.current;
 
       const spawnDelay = Math.max(180, levelConfig.enemyInterval * 0.45);
 
       if (spawnAccumulatorRef.current >= spawnDelay && nextEnemies.length < maxEnemies) {
         spawnAccumulatorRef.current = 0;
-        const spawnedEnemies = [createEnemy(currentLevel)];
-        if (levelConfig.bossEvery5) {
-          spawnedEnemies.push(createEnemy(Math.max(1, currentLevel - 1)));
-        } else if (currentLevel >= 8 && Math.random() > 0.55) {
-          spawnedEnemies.push(createEnemy(currentLevel));
+        
+        const roll = Math.random();
+        const config = getLevelConfig(currentLevel);
+        
+        if (config.availableMovements.includes('formation') && roll < 0.15 && nextEnemies.length < maxEnemies - 5) {
+          const formationEnemies: EnemyModel[] = [];
+          const startX = Math.random() * (screenWidthPx - 200) + 100;
+          const offsets = [
+            { x: 0, y: 0 },
+            { x: -40, y: -40 },
+            { x: 40, y: -40 },
+            { x: -80, y: -80 },
+            { x: 80, y: -80 },
+          ];
+          offsets.forEach(offset => {
+            formationEnemies.push(createEnemy(currentLevel, 'basic', { x: startX + offset.x, y: -100 + offset.y }, 'formation'));
+          });
+          nextEnemies = [...nextEnemies, ...formationEnemies];
+        } else {
+          const spawnedEnemies = [createEnemy(currentLevel)];
+          if (levelConfig.bossEvery5) {
+            spawnedEnemies.push(createEnemy(Math.max(1, currentLevel - 1)));
+          } else if (currentLevel >= 8 && Math.random() > 0.55) {
+            spawnedEnemies.push(createEnemy(currentLevel));
+          }
+          nextEnemies = [...nextEnemies, ...spawnedEnemies.slice(0, Math.max(0, maxEnemies - nextEnemies.length))];
         }
-        nextEnemies = [...nextEnemies, ...spawnedEnemies.slice(0, Math.max(0, maxEnemies - nextEnemies.length))];
       }
 
       if (fireAccumulatorRef.current >= fireDelay && nextBullets.length < maxBullets) {
@@ -496,7 +795,7 @@ export const GameScreen: React.FC = () => {
       if (elapsedAccumulatorRef.current >= 200) {
         elapsedAccumulatorRef.current = 0;
         updateTime();
-        setShieldCooldown(prev => Math.max(0, prev - 12)); // Approx update
+        setShieldCooldown(prev => Math.max(0, prev - 12));
         setBombCooldown(prev => Math.max(0, prev - 12));
       }
 
@@ -504,28 +803,84 @@ export const GameScreen: React.FC = () => {
 
       nextEnemies = nextEnemies
         .map(enemy => {
-          const nextY = enemy.y + enemy.speed * deltaSeconds;
-          const waveOffset = Math.sin((timestamp / 260) + enemy.phase + enemy.y * 0.012) * enemy.drift * deltaSeconds;
-          const nextX = clamp(enemy.x + waveOffset, 0, screenWidthPx - enemy.width);
+          if (enemy.frozen && enemy.frozen > 0) {
+            return { ...enemy, frozen: enemy.frozen - deltaMsRaw };
+          }
+          let nextY = enemy.y + enemy.speed * deltaSeconds;
+          let nextX = enemy.x;
+          const time = (timestamp - (enemy.startTime || timestamp)) / 1000;
+
+          if (enemy.type === 'boss') {
+            const hpPercent = (enemy.hp / enemy.maxHp) * 100;
+            if (hpPercent <= 30) {
+              const erraticX = Math.sin(time * 8) * 150;
+              const erraticY = Math.cos(time * 4) * 50;
+              nextX = clamp(screenWidthPx / 2 - enemy.width / 2 + erraticX, 0, screenWidthPx - enemy.width);
+              nextY = 100 + erraticY;
+            } else if (hpPercent <= 60) {
+              nextX = clamp(enemy.x + Math.sin(time * 3) * 150 * deltaSeconds, 0, screenWidthPx - enemy.width);
+              nextY = Math.min(enemy.y, 100);
+            } else {
+              nextY = Math.min(enemy.y + enemy.speed * 0.5 * deltaSeconds, 100);
+            }
+          } else {
+            switch (enemy.movementType) {
+              case 'zigzag':
+                const zigOffset = Math.sin(time * 4 + enemy.phase) * enemy.drift * 2;
+                nextX = clamp(enemy.x + zigOffset * deltaSeconds * 60, 0, screenWidthPx - enemy.width);
+                break;
+              case 'dive':
+                if (enemy.y < screenHeightPx * 0.4) {
+                  const dx = playerXRef.current - enemy.x;
+                  nextX += dx * deltaSeconds * 2.5;
+                } else {
+                  nextY += enemy.speed * deltaSeconds * 1.5;
+                }
+                break;
+              case 'spiral':
+                const radius = 50 + Math.sin(time * 2) * 30;
+                nextX = clamp(enemy.x + Math.cos(time * 5 + enemy.phase) * radius * deltaSeconds, 0, screenWidthPx - enemy.width);
+                nextY += enemy.speed * deltaSeconds * 0.7;
+                break;
+              case 'formation':
+                nextY = enemy.y + enemy.speed * deltaSeconds;
+                break;
+              default:
+                const waveOffset = Math.sin((timestamp / 260) + enemy.phase + enemy.y * 0.012) * enemy.drift * deltaSeconds;
+                nextX = clamp(enemy.x + waveOffset, 0, screenWidthPx - enemy.width);
+            }
+          }
+
           if (nextY > screenHeightPx) {
             lifeLostThisFrame += 1;
             return null;
           }
 
-          return {
-            ...enemy,
-            x: nextX,
-            y: nextY,
-          };
+          return { ...enemy, x: nextX, y: nextY };
         })
         .filter((enemy): enemy is EnemyModel => enemy !== null);
 
       nextBullets = nextBullets
-        .map(bullet => ({
-          ...bullet,
-          x: bullet.x + bullet.vx * deltaSeconds,
-          y: bullet.y + bullet.vy * deltaSeconds,
-        }))
+        .map(bullet => {
+          let nextX = bullet.x + bullet.vx * deltaSeconds;
+          let nextY = bullet.y + bullet.vy * deltaSeconds;
+
+          if (bullet.isHoming && bullet.hostile) {
+            const dx = playerXRef.current - bullet.x;
+            const dy = PLAYER_START_Y - bullet.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 5) {
+              nextX += (dx / dist) * bullet.speed * 0.4 * deltaSeconds;
+              nextY += (dy / dist) * bullet.speed * 0.4 * deltaSeconds;
+            }
+          }
+
+          return {
+            ...bullet,
+            x: nextX,
+            y: nextY,
+          };
+        })
         .filter(
           bullet =>
             bullet.y + bullet.height > -30 &&
@@ -546,11 +901,48 @@ export const GameScreen: React.FC = () => {
 
         for (const bullet of remainingBullets) {
           if (!destroyed && intersects(bullet, updatedEnemy, deltaSeconds)) {
-            const nextHp = updatedEnemy.hp - 1;
+            const weapon = gameStateRef.current.activeWeapon;
+            const damageBonus = (activeUpgrades ? activeUpgrades.damage * 0.5 : 0) + 
+                                (gameStateRef.current.activePerk === 'alwaysMulti' ? -0.3 : 0) +
+                                (weapon === 'sniper' ? 10 : weapon === 'laser' ? -0.5 : 0);
+            const nextHp = updatedEnemy.hp - (1 + damageBonus);
+            
+            if (gameStateRef.current.activePerk === 'freeze' && Math.random() < 0.1) {
+              updatedEnemy.frozen = 2000;
+            }
+
+            const oldHpPercent = (updatedEnemy.hp / updatedEnemy.maxHp) * 100;
+            const newHpPercent = (nextHp / updatedEnemy.maxHp) * 100;
+
+            if (updatedEnemy.type === 'boss') {
+              if ((oldHpPercent > 60 && newHpPercent <= 60) || (oldHpPercent > 30 && newHpPercent <= 30)) {
+                triggerShake(20, 500);
+                soundManager.playLevelUpSound();
+              }
+            }
+
+            if (gameStateRef.current.activePerk !== 'pierce' && weapon !== 'sniper') {
+              destroyed = nextHp <= 0;
+            }
+
             if (nextHp <= 0) {
               updateScore(updatedEnemy.points);
               addKill();
+              
+              // Award Coins
+              const coinsToAward = Math.floor((updatedEnemy.points / 10) * (gameStateRef.current.activePerk === 'doubleCoins' ? 2 : 1));
+              if (coinsToAward > 0) {
+                addCoins(coinsToAward);
+                setCoins(prev => {
+                  const next = prev + coinsToAward;
+                  firebaseManager.syncCoins(next);
+                  return next;
+                });
+              }
+
               soundManager.playExplosionSound();
+              triggerExplosion(updatedEnemy.x + updatedEnemy.width / 2, updatedEnemy.y + updatedEnemy.height / 2, updatedEnemy.type);
+              spawnPowerUp(updatedEnemy.x + updatedEnemy.width / 2, updatedEnemy.y + updatedEnemy.height / 2);
               destroyed = true;
             } else {
               updatedEnemy = {
@@ -593,8 +985,18 @@ export const GameScreen: React.FC = () => {
           bullet.y + bullet.height > playerBounds.y;
 
         if (hitsPlayer && playerHitCooldownRef.current === 0) {
+          const armorChance = activeUpgrades ? activeUpgrades.armor * 0.15 : 0;
+          if (Math.random() < armorChance) {
+            // Armor blocked the hit!
+            playerHitCooldownRef.current = PLAYER_HIT_COOLDOWN_MS;
+            triggerShake(5, 100);
+            return;
+          }
+
           playerHitCooldownRef.current = PLAYER_HIT_COOLDOWN_MS;
           loseLife();
+          setHitKey(prev => prev + 1); // Trigger hit flash
+          triggerShake(12, 300); // Screen shake on hit
           soundManager.playExplosionSound();
           continue;
         }
@@ -606,12 +1008,55 @@ export const GameScreen: React.FC = () => {
 
       nextBullets = [...remainingBullets, ...safeHostileBullets];
 
+      // Update and check PowerUps
+      nextPowerUps = nextPowerUps
+        .map(p => ({ ...p, y: p.y + p.speed * (deltaMsRaw / 1000) })) // PowerUps move in real-time, not affected by timeSlow for player benefit
+        .filter(p => {
+          const collected = 
+            p.x < playerBounds.x + playerBounds.width &&
+            p.x + p.width > playerBounds.x &&
+            p.y < playerBounds.y + playerBounds.height &&
+            p.y + p.height > playerBounds.y;
+
+          if (collected) {
+            if (p.type === 'shieldRefill') {
+              setShieldCooldown(0);
+            } else if (p.type === 'bombRefill') {
+              setBombsRemaining(prev => prev + 1);
+            }
+            activatePowerUp(p.type);
+            soundManager.playLevelUpSound(); // Use level-up sound as a placeholder for collection
+            return false;
+          }
+
+          // Magnet Logic
+          if (activeUpgrades && activeUpgrades.magnet > 0) {
+            const dx = playerBounds.x + playerBounds.width / 2 - p.x;
+            const dy = playerBounds.y + playerBounds.height / 2 - p.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const magnetRange = 100 + activeUpgrades.magnet * 50;
+            if (dist < magnetRange) {
+              const pullForce = (activeUpgrades.magnet * 150) * deltaSeconds;
+              return {
+                ...p,
+                x: p.x + (dx / dist) * pullForce,
+                y: p.y + (dy / dist) * pullForce,
+              };
+            }
+          }
+
+          return p.y < screenHeightPx;
+        });
+
       if (lifeLostThisFrame > 0) {
         Array.from({ length: lifeLostThisFrame }).forEach(() => loseLife());
+        triggerShake(10, 300);
+        setHitKey(prev => prev + 1);
       }
 
       syncEnemies(nextEnemies);
       syncBullets(nextBullets);
+      setPowerUps(nextPowerUps);
 
       animationFrameRef.current = requestAnimationFrame(updateFrame);
       } catch (error) {
@@ -665,11 +1110,21 @@ export const GameScreen: React.FC = () => {
     soundManager.stopBackgroundMusic();
     soundManager.playGameOverSound();
     setShowGameOverModal(true);
-    saveScore(gameState.score, gameState.level);
-    if (gameState.level > 1) {
-      saveUnlockedLevel(gameState.level);
+    
+    const finalScore = gameState.score;
+    const earnedCoins = Math.floor(finalScore / 100);
+    
+    saveScore(finalScore, gameState.level);
+    firebaseManager.updateHighScore(finalScore, gameState.level);
+    
+    if (earnedCoins > 0) {
+      addCoins(earnedCoins);
     }
-  }, [clearLoop, gameState.level, gameState.score, gameState.status]);
+
+    if (gameState.level >= levelId) {
+      saveUnlockedLevel(gameState.level + 1);
+    }
+  }, [clearLoop, gameState.level, gameState.score, gameState.status, levelId]);
 
   useEffect(() => {
     return () => {
@@ -681,7 +1136,7 @@ export const GameScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <PanGestureHandler onGestureEvent={handlePanGesture} onHandlerStateChange={handlePanGesture}>
-        <View style={styles.gameContainer}>
+        <Animated.View style={[styles.gameContainer, animatedShakeStyle]}>
           <BackgroundStars key="gs-bg-stars" />
           <Player 
             key="gs-player"
@@ -691,6 +1146,7 @@ export const GameScreen: React.FC = () => {
             height={PLAYER_HEIGHT} 
             shieldActive={gameState.shieldActive} 
             skin={currentSkin}
+            hitKey={hitKey}
           />
 
           {enemies.map((enemy, idx) => (
@@ -701,7 +1157,40 @@ export const GameScreen: React.FC = () => {
             <Bullet key={`gs-bullet-${bullet.id || idx}`} {...bullet} />
           ))}
 
-          <HUD key="gs-hud" score={gameState.score} lives={gameState.lives} level={gameState.level} />
+          {powerUps.map((p, idx) => (
+            <PowerUp key={`gs-pwr-${p.id || idx}`} {...p} />
+          ))}
+
+          {activeMultiplierPop && (
+            <ComboMultiplierPop 
+              multiplier={activeMultiplierPop} 
+              onFinish={() => setActiveMultiplierPop(null)} 
+            />
+          )}
+
+          {particlePool.map((p) => (
+            <Particle
+              key={p.id}
+              x={p.x}
+              y={p.y}
+              opacity={p.opacity}
+              scale={p.scale}
+              color={p.color}
+              size={p.size}
+            />
+          ))}
+
+          <HUD 
+            key="gs-hud" 
+            score={gameState.score} 
+            lives={gameState.lives} 
+            level={gameState.level}
+            multiplier={gameState.multiplier}
+            combo={gameState.combo}
+            activePowerUp={gameState.activePowerUp}
+            powerUpTime={gameState.powerUpTime}
+            coins={coins}
+          />
 
           {gameStarted && gameState.status === 'playing' && (
             <View key="gs-controls" style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -712,12 +1201,13 @@ export const GameScreen: React.FC = () => {
               <TouchableOpacity 
                 style={[
                   styles.bombButton, 
-                  bombCooldown > 0 && styles.disabledButton
+                  (bombCooldown > 0 || bombsRemaining <= 0) && styles.disabledButton
                 ]} 
                 onPress={handleBomb}
-                disabled={bombCooldown > 0}
+                disabled={bombCooldown > 0 || bombsRemaining <= 0}
               >
                 <Text style={styles.bombIcon}>💣</Text>
+                <Text style={styles.bombCountText}>{bombsRemaining}</Text>
                 {bombCooldown > 0 && (
                   <View style={styles.cooldownOverlay}>
                     <Text style={styles.cooldownText}>{Math.ceil(bombCooldown / 60)}s</Text>
@@ -730,7 +1220,7 @@ export const GameScreen: React.FC = () => {
                   styles.shieldButton, 
                   shieldCooldown > 0 && styles.disabledButton
                 ]} 
-                onPress={activateShield}
+                onPress={handleShield}
                 disabled={shieldCooldown > 0}
               >
                 <Text style={styles.shieldIcon}>🛡️</Text>
@@ -742,16 +1232,21 @@ export const GameScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           )}
-        </View>
+          </Animated.View>
       </PanGestureHandler>
 
       {!gameStarted && (
         <View style={styles.startOverlay}>
           <View style={styles.startModal}>
-            <Text style={styles.startTitle}>LEVEL {levelId}</Text>
+            <Text style={styles.startTitle}>MISSION {levelId}</Text>
             <Text style={styles.startSubtitle}>Ready to defend Earth?</Text>
+            
+            <TouchableOpacity style={styles.weaponChoice} onPress={() => setShowWeaponModal(true)}>
+              <Text style={styles.weaponChoiceText}>WEAPON: {(gameState.activeWeapon || 'standard').toUpperCase()}</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.startButton} onPress={handleStartGame}>
-              <Text style={styles.startButtonText}>START GAME</Text>
+              <Text style={styles.startButtonText}>START MISSION</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -782,6 +1277,39 @@ export const GameScreen: React.FC = () => {
           revive();
           soundManager.playBackgroundMusic();
         }}
+      />
+
+      <LevelCompleteModal
+        visible={showWinModal}
+        score={gameState.score}
+        coins={Math.floor(gameState.score * (gameState.activePerk === 'doubleCoins' ? 2 : 1) / 100)}
+        stars={gameState.lives >= 3 ? 3 : gameState.lives >= 2 ? 2 : 1}
+        bestCombo={levelStats.bestCombo}
+        enemiesKilled={getLevelConfig(gameState.level).killsToAdvance}
+        isPersonalBest={isPersonalBest}
+        onNextLevel={() => {
+          setShowWinModal(false);
+          levelClearHandledRef.current = false;
+          setLevelStats({ bestCombo: 0, kills: 0 });
+          nextLevel();
+          soundManager.playBackgroundMusic();
+        }}
+        onHome={handleHome}
+      />
+
+      <PerkSelectionModal 
+        visible={showPerkModal}
+        onSelect={handlePerkSelect}
+      />
+
+      <WeaponSelectionModal
+        visible={showWeaponModal}
+        currentWeapon={gameState.activeWeapon}
+        onSelect={(w) => {
+          setWeapon(w);
+          saveSelectedWeapon(w);
+        }}
+        onClose={() => setShowWeaponModal(false)}
       />
     </SafeAreaView>
   );
@@ -892,6 +1420,21 @@ const styles = StyleSheet.create({
     fontSize: wp(5),
     fontWeight: 'bold',
   },
+  weaponChoice: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: wp(6),
+    paddingVertical: hp(1.2),
+    borderRadius: wp(2),
+    marginBottom: hp(2.5),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  weaponChoiceText: {
+    color: COLORS.accent,
+    fontSize: wp(3),
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
   shieldButton: {
     position: 'absolute',
     right: wp(4),
@@ -938,6 +1481,22 @@ const styles = StyleSheet.create({
   },
   bombIcon: {
     fontSize: wp(8),
+  },
+  bombCountText: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: '#e74c3c',
+    color: '#fff',
+    fontSize: wp(3),
+    fontWeight: 'bold',
+    width: wp(6),
+    height: wp(6),
+    borderRadius: wp(3),
+    textAlign: 'center',
+    lineHeight: wp(6),
+    borderWidth: 1,
+    borderColor: '#fff',
   },
   cooldownOverlay: {
     ...StyleSheet.absoluteFillObject,

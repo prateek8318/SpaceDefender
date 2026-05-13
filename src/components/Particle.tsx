@@ -1,37 +1,37 @@
-// === FILE: src/components/Particle.tsx ===
-import React from 'react';
-import { Animated, StyleSheet } from 'react-native';
-import { ParticleEntity } from '../types/game.types';
+import React, { memo } from 'react';
+import { StyleSheet } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
-export const Particle: React.FC<ParticleEntity> = (entity) => {
-  const opacity = React.useRef(new Animated.Value(entity.life)).current;
-  
-  React.useEffect(() => {
-    Animated.timing(opacity, {
-      toValue: 0,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  }, [opacity]);
+interface ParticleProps {
+  id: string;
+  x: Animated.SharedValue<number>;
+  y: Animated.SharedValue<number>;
+  opacity: Animated.SharedValue<number>;
+  scale: Animated.SharedValue<number>;
+  color: string;
+  size: number;
+}
 
-  return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          left: entity.x,
-          top: entity.y,
-          backgroundColor: entity.color,
-          opacity,
-        },
-      ]}
-    />
-  );
-};
+export const Particle: React.FC<ParticleProps> = memo(({ x, y, opacity, scale, color, size }) => {
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: x.value },
+      { translateY: y.value },
+      { scale: scale.value },
+    ],
+    opacity: opacity.value,
+    backgroundColor: color,
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+  }));
+
+  return <Animated.View style={[styles.particle, animatedStyle]} />;
+});
 
 const styles = StyleSheet.create({
-  container: {
+  particle: {
     position: 'absolute',
-    borderRadius: 2,
+    zIndex: 5,
   },
 });

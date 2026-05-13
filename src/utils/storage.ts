@@ -67,6 +67,28 @@ const MUSIC_VOLUME_KEY = '@space_defender_music_volume';
 const EFFECT_VOLUME_KEY = '@space_defender_effect_volume';
 const BULLET_VOLUME_KEY = '@space_defender_bullet_volume';
 const GYRO_ENABLED_KEY = '@space_defender_gyro_enabled';
+const COINS_KEY = '@space_defender_coins';
+const UPGRADES_KEY = '@space_defender_upgrades';
+const WEAPON_KEY = '@space_defender_weapon';
+const STARS_KEY = '@space_defender_stars';
+
+export interface Upgrades {
+  fireRate: number;
+  damage: number;
+  armor: number;
+  shieldDuration: number;
+  bombCount: number;
+  magnet: number;
+}
+
+const DEFAULT_UPGRADES: Upgrades = {
+  fireRate: 0,
+  damage: 0,
+  armor: 0,
+  shieldDuration: 0,
+  bombCount: 0,
+  magnet: 0,
+};
 
 const getItem = async (key: string): Promise<string | null> => {
   try {
@@ -164,6 +186,41 @@ export const getUnlockedLevel = async (): Promise<number> => {
   }
 };
 
+export const saveStars = async (levelId: number, stars: number): Promise<void> => {
+  try {
+    const allStarsRaw = await getItem(STARS_KEY);
+    const allStars = allStarsRaw ? JSON.parse(allStarsRaw) : {};
+    
+    // Only save if it's better than current stars
+    const currentStars = allStars[levelId] || 0;
+    if (stars > currentStars) {
+      allStars[levelId] = stars;
+      await setItem(STARS_KEY, JSON.stringify(allStars));
+    }
+  } catch (error) {
+    console.error('Error saving stars:', error);
+  }
+};
+
+export const getStars = async (levelId: number): Promise<number> => {
+  try {
+    const allStarsRaw = await getItem(STARS_KEY);
+    const allStars = allStarsRaw ? JSON.parse(allStarsRaw) : {};
+    return allStars[levelId] || 0;
+  } catch (error) {
+    return 0;
+  }
+};
+
+export const getAllStars = async (): Promise<Record<number, number>> => {
+  try {
+    const allStarsRaw = await getItem(STARS_KEY);
+    return allStarsRaw ? JSON.parse(allStarsRaw) : {};
+  } catch (error) {
+    return {};
+  }
+};
+
 export const getBestScore = async (): Promise<number> => {
   try {
     const score = await getItem(BEST_SCORE_KEY);
@@ -251,6 +308,72 @@ export const getGyroEnabled = async (): Promise<boolean> => {
   } catch (error) {
     console.error('Error getting gyro enabled setting:', error);
     return false;
+  }
+};
+
+export const getCoins = async (): Promise<number> => {
+  try {
+    const coins = await getItem(COINS_KEY);
+    return coins ? JSON.parse(coins) : 0;
+  } catch (error) {
+    return 0;
+  }
+};
+
+export const addCoins = async (amount: number): Promise<void> => {
+  try {
+    const current = await getCoins();
+    await setItem(COINS_KEY, JSON.stringify(current + amount));
+  } catch (error) {
+    console.error('Error adding coins:', error);
+  }
+};
+
+export const subtractCoins = async (amount: number): Promise<boolean> => {
+  try {
+    const current = await getCoins();
+    if (current < amount) return false;
+    await setItem(COINS_KEY, JSON.stringify(current - amount));
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+export const getUpgrades = async (): Promise<Upgrades> => {
+  try {
+    const upgrades = await getItem(UPGRADES_KEY);
+    return upgrades ? JSON.parse(upgrades) : DEFAULT_UPGRADES;
+  } catch (error) {
+    return DEFAULT_UPGRADES;
+  }
+};
+
+export const saveUpgradeLevel = async (key: keyof Upgrades, level: number): Promise<void> => {
+  try {
+    const current = await getUpgrades();
+    const updated = { ...current, [key]: level };
+    await setItem(UPGRADES_KEY, JSON.stringify(updated));
+  } catch (error) {
+    console.error('Error saving upgrade level:', error);
+  }
+};
+
+export const saveSelectedWeapon = async (weapon: string): Promise<void> => {
+  try {
+    await setItem(WEAPON_KEY, weapon);
+  } catch (error) {
+    console.error('Error saving selected weapon:', error);
+  }
+};
+
+export const getSelectedWeapon = async (): Promise<string> => {
+  try {
+    const weapon = await getItem(WEAPON_KEY);
+    return weapon || 'standard';
+  } catch (error) {
+    console.error('Error getting selected weapon:', error);
+    return 'standard';
   }
 };
 

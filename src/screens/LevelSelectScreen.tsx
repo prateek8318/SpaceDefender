@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { COLORS } from '../utils/colors';
 import { hp, wp } from '../utils/responsive';
-import { getUnlockedLevel } from '../utils/storage';
+import { getUnlockedLevel, getAllStars } from '../utils/storage';
 import { LEVELS } from '../utils/levelConfig';
 
 const LEVEL_PREVIEW_COUNT = 120;
@@ -12,6 +12,7 @@ const LEVEL_PREVIEW_COUNT = 120;
 export const LevelSelectScreen: React.FC = () => {
   const navigation = useNavigation();
   const [unlockedLevel, setUnlockedLevel] = useState(1);
+  const [levelStars, setLevelStars] = useState<Record<number, number>>({});
 
   const visibleLevels = useMemo(
     () => LEVELS.slice(0, Math.max(LEVEL_PREVIEW_COUNT, unlockedLevel + 10)),
@@ -19,14 +20,16 @@ export const LevelSelectScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    const loadUnlockedLevel = async () => {
+    const loadData = async () => {
       const level = await getUnlockedLevel();
+      const stars = await getAllStars();
       setUnlockedLevel(level);
+      setLevelStars(stars);
     };
 
-    loadUnlockedLevel();
+    loadData();
 
-    const unsubscribe = navigation.addListener('focus', loadUnlockedLevel);
+    const unsubscribe = navigation.addListener('focus', loadData);
     return unsubscribe;
   }, [navigation]);
 
@@ -67,6 +70,15 @@ export const LevelSelectScreen: React.FC = () => {
             <>
               <Text style={styles.levelNumber}>{item.id}</Text>
               <Text style={styles.levelLabel}>LEVEL</Text>
+              
+              <View style={styles.starsContainer}>
+                {[1, 2, 3].map(s => (
+                  <Text key={s} style={[styles.starIcon, s <= (levelStars[item.id] || 0) && styles.activeStar]}>
+                    ⭐
+                  </Text>
+                ))}
+              </View>
+
               {isBossLevel && <Text style={styles.bossLabel}>BOSS ROUND</Text>}
               <Text style={styles.difficultyText}>DIFFICULTY {difficulty}/5</Text>
               {isCurrentLevel && <Text style={styles.currentBadge}>CURRENT</Text>}
@@ -201,10 +213,25 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   bossLabel: {
-    marginTop: hp(1),
+    marginTop: hp(0.5),
     color: COLORS.danger,
-    fontSize: wp(3.2),
+    fontSize: wp(3),
     fontWeight: '800',
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    marginTop: hp(0.5),
+    gap: 2,
+  },
+  starIcon: {
+    fontSize: wp(3.5),
+    opacity: 0.2,
+  },
+  activeStar: {
+    opacity: 1,
+    textShadowColor: '#f1c40f',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
   },
   difficultyText: {
     marginTop: hp(1),

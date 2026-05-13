@@ -11,7 +11,9 @@ import { firebaseManager } from '../utils/FirebaseManager';
 import { SkinsModal } from '../components/SkinsModal';
 import { getSelectedSkin, saveSelectedSkin, getUnlockedLevel, getVolumeSettings, getGyroEnabled } from '../utils/storage';
 import { SettingsModal } from '../components/SettingsModal';
+import { UpgradeModal } from '../components/UpgradeModal';
 import { SkinType } from '../types/game.types';
+import { getCoins } from '../utils/storage';
 import { Player } from '../components/Player';
 import Animated, { 
   useSharedValue, 
@@ -41,6 +43,8 @@ export const HomeScreen: React.FC = () => {
   const [currentSkin, setCurrentSkin] = useState<SkinType>('scout');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [coins, setCoins] = useState(0);
 
   // Reanimated Shared Values
   const shipOffset = useSharedValue(0);
@@ -65,8 +69,15 @@ export const HomeScreen: React.FC = () => {
       if (soundManager.isSoundEnabled()) {
         soundManager.playBackgroundMusic();
       }
+
+      const c = await getCoins();
+      setCoins(c);
     };
     loadData();
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadData();
+    });
 
     // Animations
     shipOffset.value = withRepeat(
@@ -88,7 +99,9 @@ export const HomeScreen: React.FC = () => {
     );
 
     titleOpacity.value = withTiming(1, { duration: 1500 });
-  }, []);
+
+    return unsubscribe;
+  }, [navigation]);
 
   useEffect(() => {
     const initialStars: Star[] = Array.from({ length: 30 }, (_, index) => ({
@@ -180,7 +193,17 @@ export const HomeScreen: React.FC = () => {
         <View style={styles.header}>
           <View style={styles.scoreBadge}>
             <Text style={styles.scoreLabel}>BEST MISSION</Text>
-            <Text style={styles.scoreValue}>{loading ? '...' : bestScore.toLocaleString()}</Text>
+            <Text style={styles.scoreValue}>{unlockedLevel}</Text>
+          </View>
+
+          <View style={[styles.scoreBadge, { borderColor: COLORS.accent }]}>
+            <Text style={[styles.scoreLabel, { color: COLORS.accent }]}>HIGH SCORE</Text>
+            <Text style={[styles.scoreValue, { color: COLORS.accent }]}>{loading ? '...' : bestScore.toLocaleString()}</Text>
+          </View>
+
+          <View style={[styles.scoreBadge, { borderColor: '#f1c40f' }]}>
+            <Text style={[styles.scoreLabel, { color: '#f1c40f' }]}>COINS</Text>
+            <Text style={[styles.scoreValue, { color: '#f1c40f' }]}>💰 {coins}</Text>
           </View>
           
           <View style={styles.rightHeader}>
@@ -232,18 +255,25 @@ export const HomeScreen: React.FC = () => {
         </Animated.View>
 
         <View style={styles.bottomArea}>
-          <Animated.View style={animatedPlayButtonStyle}>
-            <TouchableOpacity 
-              style={styles.mainPlayButton} 
-              onPress={handlePlay}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.playText}>START MISSION</Text>
-              <View style={styles.playButtonGlow} />
-            </TouchableOpacity>
-          </Animated.View>
+          <View style={{ gap: hp(1.5) }}>
+            <Animated.View style={animatedPlayButtonStyle}>
+              <TouchableOpacity 
+                style={styles.mainPlayButton} 
+                onPress={handlePlay}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.playText}>START MISSION</Text>
+                <View style={styles.playButtonGlow} />
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
 
           <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.circleButton} onPress={() => setShowUpgradeModal(true)}>
+              <Text style={styles.circleIcon}>🛠️</Text>
+              <Text style={styles.circleLabel}>UPGRADES</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.circleButton} onPress={() => setShowSkinsModal(true)}>
               <Text style={styles.circleIcon}>🚀</Text>
               <Text style={styles.circleLabel}>SKINS</Text>
@@ -260,6 +290,15 @@ export const HomeScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
         </View>
+
+        <UpgradeModal 
+          visible={showUpgradeModal}
+          onClose={async () => {
+            setShowUpgradeModal(false);
+            const c = await getCoins();
+            setCoins(c);
+          }}
+        />
 
         <SkinsModal 
           visible={showSkinsModal}

@@ -1,9 +1,9 @@
 {
-  "name": "SpaceDefenderNew",
-  "displayName": "SpaceDefender",
+  "name": "StarXDefender",
+  "displayName": "StarX Defender",
   "version": "1.0.0",
   "android": {
-    "package": "com.spacedefender.game",
+    "package": "com.starx.defender",
     "versionCode": 1,
     "adaptiveIcon": {
       "foregroundImage": "./src/assets/images/adaptive-icon.png",
@@ -23,5 +23,8 @@
         "projectId": "spacedefender"
       }
     }
+  },
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-3940256099942544~3347511713"
   }
 }

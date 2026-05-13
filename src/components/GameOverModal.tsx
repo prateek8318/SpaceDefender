@@ -1,8 +1,9 @@
 // === FILE: src/components/GameOverModal.tsx ===
 import React from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, StyleSheet, Alert, Share } from 'react-native';
 import { COLORS } from '../utils/colors';
 import { wp, hp } from '../utils/responsive';
+import { adManager } from '../utils/AdManager';
 
 interface GameOverModalProps {
   visible: boolean;
@@ -10,6 +11,7 @@ interface GameOverModalProps {
   level: number;
   onRetry: () => void;
   onHome: () => void;
+  onRevive: () => void;
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
@@ -18,7 +20,24 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   level,
   onRetry,
   onHome,
+  onRevive,
 }) => {
+  const handleRevive = () => {
+    const started = adManager.showRewardedAd((earnedReward) => {
+      if (earnedReward) {
+        onRevive();
+      }
+    });
+
+    if (!started) {
+      Alert.alert(
+        'Ad Not Ready',
+        'Please wait a few seconds for the transmission to clear and try again!',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
   return (
     <Modal
       visible={visible}
@@ -42,6 +61,14 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </View>
           </View>
           
+          {/* <TouchableOpacity 
+            style={styles.reviveButton} 
+            onPress={handleRevive}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.reviveButtonText}>📺 WATCH AD TO REVIVE</Text>
+          </TouchableOpacity> */}
+
           <View style={styles.buttonContainer}>
             <TouchableOpacity 
               style={styles.retryButton} 
@@ -49,6 +76,18 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               activeOpacity={0.7}
             >
               <Text style={styles.retryButtonText}>RETRY</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.shareButton} 
+              onPress={() => {
+                Share.share({
+                  message: `I scored ${score.toLocaleString()} on Level ${level} in Space Defender! Can you beat me?`,
+                });
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.shareButtonText}>SHARE</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -109,13 +148,28 @@ const styles = StyleSheet.create({
     fontSize: wp(4.5),
     fontWeight: 'bold',
   },
+  reviveButton: {
+    backgroundColor: COLORS.secondary,
+    width: '100%',
+    paddingVertical: hp(2),
+    borderRadius: wp(2),
+    marginBottom: hp(2),
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
+  reviveButtonText: {
+    color: '#fff',
+    fontSize: wp(4),
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
   buttonContainer: {
     flexDirection: 'row',
     gap: wp(4),
+    width: '100%',
   },
   retryButton: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: wp(6),
     paddingVertical: hp(2),
     borderRadius: wp(2),
     flex: 1,
@@ -126,9 +180,20 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  shareButton: {
+    backgroundColor: '#3498db',
+    paddingVertical: hp(2),
+    borderRadius: wp(2),
+    flex: 1,
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: wp(4),
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
   homeButton: {
     backgroundColor: COLORS.muted,
-    paddingHorizontal: wp(6),
     paddingVertical: hp(2),
     borderRadius: wp(2),
     flex: 1,

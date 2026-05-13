@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "572929491377",
+    "firebase_url": "https://space-defender-4b6f9-default-rtdb.firebaseio.com",
+    "project_id": "space-defender-4b6f9",
+    "storage_bucket": "space-defender-4b6f9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:572929491377:android:9ea7f4554a22493516bd90",
+        "android_client_info": {
+          "package_name": "com.spacedefender.newgame"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqu2LfimZQNzU56WdlRZmUNPv5P3iefpg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:572929491377:android:8d9b4542bde3727a16bd90",
+        "android_client_info": {
+          "package_name": "com.starx.defender"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqu2LfimZQNzU56WdlRZmUNPv5P3iefpg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

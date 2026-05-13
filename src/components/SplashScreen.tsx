@@ -12,58 +12,72 @@ const SplashScreen: React.FC<{ onFinish: () => void }> = ({ onFinish }) => {
   const [pulseAnim] = useState(new Animated.Value(1));
 
   useEffect(() => {
-    // Main entrance animation
-    Animated.parallel([
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Glow effect
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, {
+    try {
+      // Main entrance animation
+      Animated.parallel([
+        Animated.timing(scaleAnim, {
           toValue: 1,
-          duration: 1500,
+          duration: 800,
           useNativeDriver: true,
         }),
-        Animated.timing(glowAnim, {
-          toValue: 0.3,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    // Pulse effect
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
+        Animated.timing(opacityAnim, {
           toValue: 1,
-          duration: 1000,
+          duration: 600,
           useNativeDriver: true,
         }),
-      ])
-    ).start();
+      ]).start();
+
+      // Glow effect
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowAnim, {
+            toValue: 1,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(glowAnim, {
+            toValue: 0.3,
+            duration: 1500,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Pulse effect
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } catch (error) {
+      console.warn('Splash animation error:', error);
+    }
 
     // Hide splash screen after 4 seconds
     const timer = setTimeout(() => {
-      onFinish();
+      try {
+        onFinish();
+      } catch (error) {
+        console.warn('Splash finish callback error:', error);
+      }
     }, 4000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      try {
+        clearTimeout(timer);
+      } catch (error) {
+        console.warn('Splash cleanup error:', error);
+      }
+    };
   }, [scaleAnim, opacityAnim, glowAnim, pulseAnim, onFinish]);
 
   return (
@@ -181,7 +195,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.glowCyan,
     borderRadius: width * 0.4,
     opacity: 0.3,
-    filter: 'blur(20px)',
   },
   tagline: {
     fontSize: wp(4.5),

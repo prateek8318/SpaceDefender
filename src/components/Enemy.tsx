@@ -4,34 +4,35 @@ import { EnemyEntity } from '../types/game.types';
 import { COLORS } from '../utils/colors';
 
 export const Enemy: React.FC<EnemyEntity> = memo((entity) => {
-  const frameStyle =
-    entity.type === 'boss'
-      ? styles.bossFrame
-      : entity.type === 'tank'
-        ? styles.tankFrame
-        : entity.type === 'fast'
-          ? styles.fastFrame
-          : styles.basicFrame;
+  const getEnemyStyle = () => {
+    switch (entity.type) {
+      case 'boss': return { frame: styles.bossFrame, core: styles.bossCore, glow: '#ff7675' };
+      case 'tank': return { frame: styles.tankFrame, core: styles.tankCore, glow: '#a29bfe' };
+      case 'fast': return { frame: styles.fastFrame, core: styles.fastCore, glow: '#43D7FF' };
+      default: return { frame: styles.basicFrame, core: styles.basicCore, glow: '#ff5a66' };
+    }
+  };
 
-  const coreStyle =
-    entity.type === 'boss'
-      ? styles.bossCore
-      : entity.type === 'tank'
-        ? styles.tankCore
-        : entity.type === 'fast'
-          ? styles.fastCore
-          : styles.basicCore;
+  const style = getEnemyStyle();
 
   return (
     <View style={[styles.container, { left: entity.x, top: entity.y, width: entity.width, height: entity.height }]}>
-      <View style={[styles.frame, frameStyle]}>
-        <View style={[styles.core, coreStyle]} />
-        <View style={styles.cockpit} />
-        <View style={styles.leftWing} />
-        <View style={styles.rightWing} />
-        <View style={styles.weaponBar} />
-        <View style={styles.engineStrip} />
+      <View style={[styles.frame, style.frame]}>
+        {/* Evil Core */}
+        <View style={[styles.core, style.core]} />
+        
+        {/* Spikes/Wings */}
+        <View style={styles.leftSpike} />
+        <View style={styles.rightSpike} />
+        
+        {/* Eyes/Lights */}
+        <View style={styles.leftEye} />
+        <View style={styles.rightEye} />
+        
+        {/* Engine Glow */}
+        <View style={[styles.engine, { backgroundColor: style.glow }]} />
       </View>
+      
       {entity.hp > 1 && (
         <View style={styles.hpBadge}>
           <Text style={styles.hpText}>{entity.hp}</Text>
@@ -51,108 +52,99 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderWidth: 2,
-    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
   },
   basicFrame: {
-    backgroundColor: '#3A0C10',
-    borderColor: '#FF5A66',
-    borderRadius: 14,
+    backgroundColor: '#1e0505',
+    borderColor: '#ff5a66',
+    borderRadius: 8,
     transform: [{ rotate: '45deg' }],
   },
   fastFrame: {
-    backgroundColor: '#071A22',
+    backgroundColor: '#05101e',
     borderColor: '#43D7FF',
-    borderRadius: 18,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 15,
   },
   tankFrame: {
-    backgroundColor: '#23122D',
-    borderColor: '#A86BFF',
+    backgroundColor: '#10051e',
+    borderColor: '#a29bfe',
     borderRadius: 12,
+    borderWidth: 3,
   },
   bossFrame: {
-    backgroundColor: '#1A0E28',
-    borderColor: '#FF5C93',
-    borderRadius: 18,
+    backgroundColor: '#1e0510',
+    borderColor: '#ff7675',
+    borderRadius: 20,
+    borderWidth: 4,
   },
   core: {
-    position: 'absolute',
-    left: '18%',
-    right: '18%',
-    top: '18%',
-    bottom: '18%',
-    borderRadius: 10,
-  },
-  basicCore: {
-    backgroundColor: '#FF3A4E',
-  },
-  fastCore: {
-    backgroundColor: '#00BEEA',
-  },
-  tankCore: {
-    backgroundColor: '#8A52FF',
-  },
-  bossCore: {
-    backgroundColor: '#B147FF',
-  },
-  cockpit: {
-    position: 'absolute',
-    width: '22%',
-    height: '22%',
+    width: '40%',
+    height: '40%',
     borderRadius: 999,
-    backgroundColor: COLORS.white,
-    top: '22%',
   },
-  leftWing: {
+  basicCore: { backgroundColor: '#ff5a66' },
+  fastCore: { backgroundColor: '#43D7FF' },
+  tankCore: { backgroundColor: '#a29bfe' },
+  bossCore: { backgroundColor: '#ff7675', width: '60%', height: '60%' },
+  
+  leftSpike: {
     position: 'absolute',
-    width: '12%',
-    height: '24%',
-    left: '10%',
-    top: '24%',
-    borderRadius: 999,
-    backgroundColor: COLORS.dangerDark,
+    left: -10,
+    width: 10,
+    height: '60%',
+    backgroundColor: 'inherit',
+    borderColor: 'inherit',
+    borderLeftWidth: 2,
   },
-  rightWing: {
+  rightSpike: {
     position: 'absolute',
-    width: '12%',
-    height: '24%',
-    right: '10%',
-    top: '24%',
-    borderRadius: 999,
-    backgroundColor: COLORS.dangerDark,
+    right: -10,
+    width: 10,
+    height: '60%',
+    backgroundColor: 'inherit',
+    borderColor: 'inherit',
+    borderRightWidth: 2,
   },
-  weaponBar: {
+  leftEye: {
     position: 'absolute',
-    left: '15%',
-    right: '15%',
-    top: '54%',
-    height: '10%',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.26)',
+    top: '20%',
+    left: '20%',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
   },
-  engineStrip: {
+  rightEye: {
     position: 'absolute',
-    left: '24%',
-    right: '24%',
-    bottom: '10%',
-    height: '12%',
-    borderRadius: 999,
-    backgroundColor: COLORS.glowOrange,
+    top: '20%',
+    right: '20%',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+  },
+  engine: {
+    position: 'absolute',
+    top: -5,
+    width: '50%',
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.8,
   },
   hpBadge: {
     position: 'absolute',
-    bottom: -12,
-    minWidth: 22,
+    bottom: -15,
+    backgroundColor: 'rgba(0,0,0,0.8)',
     paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 999,
-    backgroundColor: 'rgba(0,0,0,0.82)',
-    alignItems: 'center',
+    borderRadius: 4,
   },
   hpText: {
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: '900',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 });

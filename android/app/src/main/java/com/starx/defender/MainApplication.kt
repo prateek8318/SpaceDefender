@@ -1,4 +1,4 @@
-package com.spacedefendernew
+package com.starx.defender
 
 import android.app.Application
 import com.facebook.react.PackageList

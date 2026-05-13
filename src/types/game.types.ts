@@ -10,9 +10,12 @@ export interface Entity {
   renderer?: React.FC<any>;
 }
 
+export type SkinType = 'scout' | 'vanguard' | 'phoenix' | 'phantom' | 'omega';
+
 export interface PlayerEntity extends Entity {
   speed: number;
   lives: number;
+  skin: SkinType;
 }
 
 export interface EnemyEntity extends Entity {
@@ -46,6 +49,8 @@ export interface GameState {
   timeElapsed: number;
   lastEnemySpawnTime: number;
   lastBulletTime: number;
+  shieldActive: boolean;
+  lifelineUsed: boolean;
 }
 
 export interface GameEngineProps {

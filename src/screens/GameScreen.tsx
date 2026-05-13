@@ -5,6 +5,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { GameOverModal } from '../components/GameOverModal';
 import { HUD } from '../components/HUD';
 import { Player } from '../components/Player';
+import { SkinType } from '../types/game.types';
+import { getSelectedSkin } from '../utils/storage';
 import { Enemy } from '../components/Enemy';
 import { Bullet } from '../components/Bullet';
 import { BackgroundStars } from '../components/BackgroundStars';
@@ -14,6 +16,9 @@ import { COLORS } from '../utils/colors';
 import { hp, screenHeightPx, screenWidthPx, wp } from '../utils/responsive';
 import { getLevelConfig } from '../utils/levelConfig';
 import { soundManager } from '../utils/SoundManager';
+import { adManager } from '../utils/AdManager';
+import { getGyroEnabled } from '../utils/storage';
+import { useGyroscope } from '../hooks/useGyroscope';
 
 interface RouteParams {
   levelId: number;
@@ -64,14 +69,24 @@ const ENEMY_SIZES: Record<EnemyKind, { width: number; height: number }> = {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-const intersects = (a: BulletModel, b: EnemyModel) =>
-  a.x < b.x + b.width &&
-  a.x + a.width > b.x &&
-  a.y < b.y + b.height &&
-  a.y + a.height > b.y;
+const intersects = (bullet: BulletModel, enemy: EnemyModel, deltaSeconds: number) => {
+  // Increase collision height based on speed to prevent skipping at low FPS
+  const travelDistance = Math.abs(bullet.vy * deltaSeconds);
+  const collisionHeight = Math.max(bullet.height, travelDistance + 10);
+  
+  return (
+    bullet.x < enemy.x + enemy.width &&
+    bullet.x + bullet.width > enemy.x &&
+    bullet.y < enemy.y + enemy.height &&
+    bullet.y + collisionHeight > enemy.y
+  );
+};
 
-const makeId = (prefix: string) =>
-  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+let idCounter = 0;
+const makeId = (prefix: string) => {
+  idCounter++;
+  return `${prefix}-${Date.now()}-${idCounter}-${Math.random().toString(36).slice(2, 8)}`;
+};
 
 export const GameScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -88,14 +103,53 @@ export const GameScreen: React.FC = () => {
     updateScore,
     addKill,
     loseLife,
+    activateShield,
+    revive,
   } = useGameState(levelId);
 
   const [showPauseModal, setShowPauseModal] = useState(false);
+  const [shieldCooldown, setShieldCooldown] = useState(0);
+  const [bombCooldown, setBombCooldown] = useState(0);
+  const [isShieldActive, setIsShieldActive] = useState(false);
+  const [gyroEnabled, setGyroEnabled] = useState(false);
+
+  useEffect(() => {
+    if (shieldCooldown > 0) setShieldCooldown(prev => prev - 1);
+    if (bombCooldown > 0) setBombCooldown(prev => prev - 1);
+  }, [/* dependency to trigger every tick, typically gameState update */]);
+
+  const handleBomb = () => {
+    if (bombCooldown > 0) return;
+    
+    soundManager.playBombSound();
+    setEnemies([]);
+    setBombCooldown(1800); // 30 seconds cooldown (60fps * 30)
+  };
+  const [currentSkin, setCurrentSkin] = useState<SkinType>('scout');
   const [showGameOverModal, setShowGameOverModal] = useState(false);
+  
+  useEffect(() => {
+    const loadSettings = async () => {
+      const skin = await getSelectedSkin();
+      setCurrentSkin(skin as SkinType);
+      
+      const gyro = await getGyroEnabled();
+      setGyroEnabled(gyro);
+    };
+    loadSettings();
+  }, []);
   const [gameStarted, setGameStarted] = useState(false);
   const [playerX, setPlayerX] = useState(screenWidthPx / 2 - PLAYER_WIDTH / 2);
+  const { playerX: gyroX, setPlayerX: setGyroX } = useGyroscope(gyroEnabled && gameStarted && gameState.status === 'playing', playerX, PLAYER_WIDTH);
+
   const [enemies, setEnemies] = useState<EnemyModel[]>([]);
   const [bullets, setBullets] = useState<BulletModel[]>([]);
+
+  useEffect(() => {
+    if (gyroEnabled) {
+      setPlayerX(gyroX);
+    }
+  }, [gyroX, gyroEnabled]);
 
   const playerXRef = useRef(playerX);
   const gestureStartXRef = useRef(playerX);
@@ -311,6 +365,7 @@ export const GameScreen: React.FC = () => {
   const handleHome = useCallback(() => {
     clearLoop();
     soundManager.stopBackgroundMusic();
+    soundManager.stopEffect('explosion');
     navigation.goBack();
   }, [clearLoop, navigation]);
 
@@ -325,7 +380,9 @@ export const GameScreen: React.FC = () => {
     bulletsRef.current = [];
     resetLoopState();
     gameOverHandledRef.current = false;
+    soundManager.stopEffect('explosion');
     setPlayerX(screenWidthPx / 2 - PLAYER_WIDTH / 2);
+    setGyroX(screenWidthPx / 2 - PLAYER_WIDTH / 2);
     playerXRef.current = screenWidthPx / 2 - PLAYER_WIDTH / 2;
   }, [clearLoop, reset, resetLoopState]);
 
@@ -340,6 +397,7 @@ export const GameScreen: React.FC = () => {
     bulletsRef.current = [];
     resetLoopState();
     startGame();
+    soundManager.stopEffect('explosion');
     soundManager.playBackgroundMusic(true);
   }, [resetLoopState, startGame]);
 
@@ -369,11 +427,12 @@ export const GameScreen: React.FC = () => {
     }
 
     const updateFrame = (timestamp: number) => {
-      const currentState = gameStateRef.current;
-      if (currentState.status !== 'playing') {
-        animationFrameRef.current = requestAnimationFrame(updateFrame);
-        return;
-      }
+      try {
+        const currentState = gameStateRef.current;
+        if (currentState.status !== 'playing') {
+          animationFrameRef.current = requestAnimationFrame(updateFrame);
+          return;
+        }
 
       if (!lastFrameTimeRef.current) {
         lastFrameTimeRef.current = timestamp;
@@ -437,6 +496,8 @@ export const GameScreen: React.FC = () => {
       if (elapsedAccumulatorRef.current >= 200) {
         elapsedAccumulatorRef.current = 0;
         updateTime();
+        setShieldCooldown(prev => Math.max(0, prev - 12)); // Approx update
+        setBombCooldown(prev => Math.max(0, prev - 12));
       }
 
       let lifeLostThisFrame = 0;
@@ -484,7 +545,7 @@ export const GameScreen: React.FC = () => {
         const nextRemainingBullets: BulletModel[] = [];
 
         for (const bullet of remainingBullets) {
-          if (!destroyed && intersects(bullet, updatedEnemy)) {
+          if (!destroyed && intersects(bullet, updatedEnemy, deltaSeconds)) {
             const nextHp = updatedEnemy.hp - 1;
             if (nextHp <= 0) {
               updateScore(updatedEnemy.points);
@@ -553,6 +614,11 @@ export const GameScreen: React.FC = () => {
       syncBullets(nextBullets);
 
       animationFrameRef.current = requestAnimationFrame(updateFrame);
+      } catch (error) {
+        console.error('Game loop error:', error);
+        // Continue the loop even if there's an error
+        animationFrameRef.current = requestAnimationFrame(updateFrame);
+      }
     };
 
     animationFrameRef.current = requestAnimationFrame(updateFrame);
@@ -578,6 +644,11 @@ export const GameScreen: React.FC = () => {
       previousLevelRef.current = gameState.level;
       soundManager.playLevelUpSound();
       saveUnlockedLevel(gameState.level);
+
+      // Show ad every 10 levels
+      if (gameState.level % 10 === 0) {
+        // adManager.showInterstitial();
+      }
       return;
     }
 
@@ -611,23 +682,65 @@ export const GameScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <PanGestureHandler onGestureEvent={handlePanGesture} onHandlerStateChange={handlePanGesture}>
         <View style={styles.gameContainer}>
-          <BackgroundStars />
-          <Player x={playerX} y={PLAYER_START_Y} width={PLAYER_WIDTH} height={PLAYER_HEIGHT} />
+          <BackgroundStars key="gs-bg-stars" />
+          <Player 
+            key="gs-player"
+            x={playerX} 
+            y={PLAYER_START_Y} 
+            width={PLAYER_WIDTH} 
+            height={PLAYER_HEIGHT} 
+            shieldActive={gameState.shieldActive} 
+            skin={currentSkin}
+          />
 
-          {enemies.map(enemy => (
-            <Enemy key={enemy.id} {...enemy} />
+          {enemies.map((enemy, idx) => (
+            <Enemy key={`gs-enemy-${enemy.id || idx}`} {...enemy} />
+          ))}
+          
+          {bullets.map((bullet, idx) => (
+            <Bullet key={`gs-bullet-${bullet.id || idx}`} {...bullet} />
           ))}
 
-          {bullets.map(bullet => (
-            <Bullet key={bullet.id} {...bullet} />
-          ))}
-
-          <HUD score={gameState.score} lives={gameState.lives} level={gameState.level} />
+          <HUD key="gs-hud" score={gameState.score} lives={gameState.lives} level={gameState.level} />
 
           {gameStarted && gameState.status === 'playing' && (
-            <TouchableOpacity style={styles.pauseButton} onPress={handlePause}>
-              <View style={styles.pauseIcon} />
-            </TouchableOpacity>
+            <View key="gs-controls" style={StyleSheet.absoluteFill} pointerEvents="box-none">
+              <TouchableOpacity style={styles.pauseButton} onPress={handlePause}>
+                <View style={styles.pauseIcon} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[
+                  styles.bombButton, 
+                  bombCooldown > 0 && styles.disabledButton
+                ]} 
+                onPress={handleBomb}
+                disabled={bombCooldown > 0}
+              >
+                <Text style={styles.bombIcon}>💣</Text>
+                {bombCooldown > 0 && (
+                  <View style={styles.cooldownOverlay}>
+                    <Text style={styles.cooldownText}>{Math.ceil(bombCooldown / 60)}s</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.shieldButton, 
+                  shieldCooldown > 0 && styles.disabledButton
+                ]} 
+                onPress={activateShield}
+                disabled={shieldCooldown > 0}
+              >
+                <Text style={styles.shieldIcon}>🛡️</Text>
+                {shieldCooldown > 0 && (
+                  <View style={styles.cooldownOverlay}>
+                    <Text style={styles.cooldownText}>{Math.ceil(shieldCooldown / 60)}s</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </PanGestureHandler>
@@ -663,6 +776,12 @@ export const GameScreen: React.FC = () => {
         level={gameState.level}
         onRetry={handleRetry}
         onHome={handleHome}
+        onRevive={() => {
+          setShowGameOverModal(false);
+          gameOverHandledRef.current = false;
+          revive();
+          soundManager.playBackgroundMusic();
+        }}
       />
     </SafeAreaView>
   );
@@ -771,6 +890,65 @@ const styles = StyleSheet.create({
   startButtonText: {
     color: COLORS.bg,
     fontSize: wp(5),
+    fontWeight: 'bold',
+  },
+  shieldButton: {
+    position: 'absolute',
+    right: wp(4),
+    bottom: hp(22), // Moved up from bottom
+    width: wp(16),
+    height: wp(16),
+    borderRadius: wp(8),
+    backgroundColor: 'rgba(52, 152, 219, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#3498db',
+    shadowColor: '#3498db',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  bombButton: {
+    position: 'absolute',
+    right: wp(4),
+    bottom: hp(32), // Arranged vertically above shield
+    width: wp(16),
+    height: wp(16),
+    borderRadius: wp(8),
+    backgroundColor: 'rgba(231, 76, 60, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#e74c3c',
+    shadowColor: '#e74c3c',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  disabledButton: {
+    backgroundColor: 'rgba(44, 62, 80, 0.6)',
+    borderColor: '#7f8c8d',
+    shadowOpacity: 0,
+  },
+  shieldIcon: {
+    fontSize: wp(8),
+  },
+  bombIcon: {
+    fontSize: wp(8),
+  },
+  cooldownOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: wp(8),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cooldownText: {
+    color: '#fff',
+    fontSize: wp(3.5),
     fontWeight: 'bold',
   },
 });

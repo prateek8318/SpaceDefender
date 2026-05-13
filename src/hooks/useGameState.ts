@@ -13,6 +13,8 @@ export const useGameState = (initialLevel: number = 1) => {
     timeElapsed: 0,
     lastEnemySpawnTime: 0,
     lastBulletTime: 0,
+    shieldActive: false,
+    lifelineUsed: false,
   });
 
   const lastBulletTime = useRef<number>(0);
@@ -25,6 +27,7 @@ export const useGameState = (initialLevel: number = 1) => {
 
   const loseLife = useCallback(() => {
     setGameState(prev => {
+      if (prev.shieldActive) return prev; // Shield protects from losing life
       const newLives = Math.max(0, prev.lives - 1);
       return {
         ...prev,
@@ -51,6 +54,7 @@ export const useGameState = (initialLevel: number = 1) => {
           ...prev,
           kills: 0,
           level: newLevel,
+          lifelineUsed: false, // Reset lifeline for new level
         };
       }
       
@@ -69,6 +73,8 @@ export const useGameState = (initialLevel: number = 1) => {
       timeElapsed: 0,
       lastEnemySpawnTime: 0,
       lastBulletTime: 0,
+      shieldActive: false,
+      lifelineUsed: false,
     }));
   }, []);
 
@@ -94,6 +100,8 @@ export const useGameState = (initialLevel: number = 1) => {
       timeElapsed: 0,
       lastEnemySpawnTime: 0,
       lastBulletTime: 0,
+      shieldActive: false,
+      lifelineUsed: false,
     });
     lastBulletTime.current = 0;
     lastEnemySpawnTime.current = 0;
@@ -112,6 +120,35 @@ export const useGameState = (initialLevel: number = 1) => {
     });
   }, []);
 
+  const shieldTimeoutRef = useRef<any>(null);
+
+  const activateShield = useCallback(() => {
+    setGameState(prev => {
+      if (prev.lifelineUsed || prev.status !== 'playing') return prev;
+      
+      if (shieldTimeoutRef.current) clearTimeout(shieldTimeoutRef.current);
+      
+      shieldTimeoutRef.current = setTimeout(() => {
+        setGameState(current => ({ ...current, shieldActive: false }));
+        shieldTimeoutRef.current = null;
+      }, 5000);
+
+      return {
+        ...prev,
+        shieldActive: true,
+        lifelineUsed: true,
+      };
+    });
+  }, []);
+
+  const revive = useCallback(() => {
+    setGameState(prev => ({
+      ...prev,
+      lives: 1,
+      status: 'playing',
+    }));
+  }, []);
+
   return {
     gameState: {
       ...gameState,
@@ -127,5 +164,7 @@ export const useGameState = (initialLevel: number = 1) => {
     gameOver,
     reset,
     updateTime,
+    activateShield,
+    revive,
   };
 };

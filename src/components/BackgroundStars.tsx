@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { COLORS } from '../utils/colors';
 
 interface Star {
-  id: number;
+  id: string | number;
   x: number;
   y: number;
   size: number;
@@ -13,12 +13,12 @@ interface Star {
 export const BackgroundStars: React.FC = memo(() => {
   const stars = useMemo<Star[]>(
     () =>
-      Array.from({ length: 24 }, (_, index) => ({
-        id: index,
+      Array.from({ length: 60 }, (_, index) => ({
+        id: `bg-star-${index}`,
         x: Math.random() * 100,
         y: Math.random() * 100,
-        size: Math.random() * 2 + 1,
-        opacity: Math.random() * 0.45 + 0.25,
+        size: Math.random() * 2.5 + 0.5,
+        opacity: Math.random() * 0.7 + 0.1,
       })),
     [],
   );
